@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Node modules (Husky, Commitlint, Commitizen)
+node_modules/
+package-lock.json

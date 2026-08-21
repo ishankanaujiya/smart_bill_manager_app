@@ -1,0 +1,27 @@
+{
+  "name": "smart_bill_manager_app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Group Expense Management and Bill-Splitting Application",
+  "scripts": {
+    "commit": "cz",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishankanaujiya/smart_bill_manager_app.git"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "commitizen": "^4.3.2",
+    "cz-conventional-changelog": "^3.3.0",
+    "husky": "^9.1.7"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  }
+}
