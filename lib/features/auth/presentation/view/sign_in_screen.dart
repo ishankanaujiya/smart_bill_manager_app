@@ -8,6 +8,7 @@ import '../../../../app/theme/design_system.dart';
 import '../../../../core/validators/auth_validator.dart';
 import '../../../../core/widgets/app_field_error.dart';
 import '../widget/auth_header.dart';
+import 'registration_details_screen.dart';
 
 /// Sign-in screen for returning users.
 ///
@@ -104,7 +105,7 @@ class _SignInScreenState extends State<SignInScreen>
 
   bool _validate() {
     final emailErr = AuthValidator.email(_emailController.text);
-    final passErr = AuthValidator.passwordRequired(_passwordController.text);
+    final passErr = AuthValidator.password(_passwordController.text);
 
     setState(() {
       _emailError = emailErr;
@@ -146,6 +147,14 @@ class _SignInScreenState extends State<SignInScreen>
 
   void _clearPasswordError() {
     if (_passwordError != null) setState(() => _passwordError = null);
+  }
+
+  void _openRegistration(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const RegistrationDetailsScreen(),
+      ),
+    );
   }
 
   @override
@@ -345,9 +354,7 @@ class _SignInScreenState extends State<SignInScreen>
                                           fontWeight: FontWeight.w700,
                                         ),
                                         recognizer: TapGestureRecognizer()
-                                          ..onTap = () {
-                                            // TODO(auth): Navigate to register
-                                          },
+                                          ..onTap = () => _openRegistration(context),
                                       ),
                                     ],
                                   ),

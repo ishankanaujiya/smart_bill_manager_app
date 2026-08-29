@@ -6,6 +6,7 @@ import '../widget/welcome_cta_button.dart';
 import '../widget/welcome_headline.dart';
 import '../widget/welcome_hero_image.dart';
 import '../widget/welcome_sign_in_prompt.dart';
+import 'registration_details_screen.dart';
 import 'sign_in_screen.dart';
 
 /// First screen shown to users when the app is freshly installed or no user
@@ -83,7 +84,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       const SizedBox(height: AppSpacing.xl),
                       WelcomeCtaButton(
                         animation: _animationController,
-                        onPressed: () {},
+                        onPressed: () => _openRegistration(context),
                       ),
                       const SizedBox(height: AppSpacing.md),
                       WelcomeSignInPrompt(
@@ -105,6 +106,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   void _openSignIn(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+    );
+  }
+
+  void _openRegistration(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const RegistrationDetailsScreen(),
+      ),
     );
   }
 }
