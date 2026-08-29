@@ -1,99 +1,92 @@
 import 'package:flutter/material.dart';
 
-import '../widget/welcome_illustration.dart';
+import '../../../../app/theme/design_system.dart';
+import '../widget/animated_welcome_entrance.dart';
+import '../widget/welcome_cta_button.dart';
+import '../widget/welcome_headline.dart';
+import '../widget/welcome_hero_image.dart';
+import '../widget/welcome_sign_in_prompt.dart';
 
-class WelcomeScreen extends StatelessWidget {
+/// First screen shown to users when the app is freshly installed or no user
+/// is currently signed in.
+///
+/// Implements the exact welcome design from the product spec:
+///  - "Welcome to" label
+///  - "Group Expense Splitter" two-line primary headline
+///  - "Manage together. Split easily." subtitle
+///  - Hero illustration
+///  - "Get Started" primary CTA
+///  - "Already have an account? Sign in" footer
+///
+/// Each element is animated with a staggered slide + fade entrance.
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final size = MediaQuery.sizeOf(context);
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
 
+class _WelcomeScreenState extends State<WelcomeScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _animationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: WelcomeAnimationIntervals.duration,
+    );
+
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            children: [
-              const Spacer(flex: 2),
-              SizedBox(
-                height: size.height * 0.35,
-                child: const WelcomeIllustration(),
-              ),
-              const Spacer(flex: 2),
-              Text(
-                'Split expenses.',
-                style: theme.textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF2D3142),
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Stay friends.',
-                style: theme.textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF6C5CE7),
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Easily manage group expenses,\ntrack payments and settle up\nwithout the awkwardness.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: const Color(0xFF7B7F9E),
-                  height: 1.6,
-                ),
-              ),
-              const Spacer(flex: 3),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6C5CE7),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    textStyle: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  child: const Text('Get Started'),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Already have an account? ',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF7B7F9E),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {},
-                    child: Text(
-                      'Sign In',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF6C5CE7),
-                        fontWeight: FontWeight.w700,
+        child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Padding(
+                padding: AppSpacing.screenPadding,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: AppSpacing.xxxl),
+                    WelcomeHeadline(animation: _animationController),
+                    const SizedBox(height: AppSpacing.xl),
+                    Expanded(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 360),
+                          child: WelcomeHeroImage(animation: _animationController),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: AppSpacing.xl),
+                    WelcomeCtaButton(
+                      animation: _animationController,
+                      onPressed: () {},
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    WelcomeSignInPrompt(
+                      animation: _animationController,
+                      onSignInTap: () {},
+                    ),
+                    const SizedBox(height: AppSpacing.xxl),
+                  ],
+                ),
               ),
-              const SizedBox(height: 32),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

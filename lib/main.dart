@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app/theme/design_system.dart';
-import 'features/showcase/presentation/view/showcase_screen.dart';
+import 'features/auth/presentation/view/welcome_screen.dart';
 
-/// Global notifier for the app's [ThemeMode].
+/// Global notifier for the app [ThemeMode].
 ///
-/// Using a [ValueNotifier] keeps the theme-mode state outside the widget tree
-/// so any screen can toggle it without prop-drilling or an extra dependency.
+/// Using a [ValueNotifier] lets the theme mode be switched from anywhere in the
+/// app (e.g. settings) without prop-drilling or an extra dependency.
 final ValueNotifier<ThemeMode> _themeModeNotifier =
-    ValueNotifier<ThemeMode>(ThemeMode.light);
+    ValueNotifier<ThemeMode>(ThemeMode.system);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,10 +36,7 @@ class SmartBillManagerApp extends StatelessWidget {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: mode,
-          home: ShowcaseScreen(
-            themeMode: mode,
-            onThemeModeChanged: (newMode) => _themeModeNotifier.value = newMode,
-          ),
+          home: const WelcomeScreen(),
         );
       },
     );
