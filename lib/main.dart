@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'app/theme/design_system.dart';
 import 'features/auth/presentation/view/welcome_screen.dart';
 
 void main() {
@@ -22,13 +23,9 @@ class SmartBillManagerApp extends StatelessWidget {
     return MaterialApp(
       title: 'Smart Bill Manager',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C5CE7),
-        ),
-        fontFamily: 'Roboto',
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
       home: const WelcomeScreen(),
     );
   }
