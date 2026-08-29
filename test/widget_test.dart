@@ -16,4 +16,17 @@ void main() {
     expect(find.text('Already have an account?'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
   });
+
+  testWidgets('Welcome screen navigates to sign-in screen', (WidgetTester tester) async {
+    await tester.pumpWidget(const SmartBillManagerApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sign in'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Sign in to see who owes what.'), findsOneWidget);
+    expect(find.text('Mobile number'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+  });
 }
