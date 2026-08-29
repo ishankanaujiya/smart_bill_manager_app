@@ -1,3 +1,7 @@
+import 'package:flutter/material.dart';
+
+import '../../app/theme/app_colors.dart';
+
 /// Validation rules for authentication forms.
 ///
 /// All methods return `null` when the input is valid, otherwise a localized
@@ -99,6 +103,39 @@ abstract final class AuthValidator {
     return null;
   }
 
+  /// Validates that the confirmation password matches the original.
+  static String? confirmPassword(String? value, String original) {
+    final input = value ?? '';
+
+    if (input.isEmpty) {
+      return 'Confirm your password';
+    }
+
+    if (input != original) {
+      return 'Passwords do not match';
+    }
+
+    return null;
+  }
+
+  /// Score and label for a password based on multiple criteria.
+  static PasswordStrength passwordStrength(String? value) {
+    final input = value ?? '';
+
+    var score = 0;
+    if (input.length >= 8) score++;
+    if (input.length >= 12) score++;
+    if (RegExp(r'[A-Z]').hasMatch(input)) score++;
+    if (RegExp(r'[0-9]').hasMatch(input)) score++;
+    if (RegExp(r'''[!@#$%^&*(),.?":{}|<>_+\-=\[\]\\\\;'~`\/]''').hasMatch(input)) {
+      score++;
+    }
+
+    if (score <= 2) return PasswordStrength.weak;
+    if (score <= 4) return PasswordStrength.fair;
+    return PasswordStrength.strong;
+  }
+
   // ---------------------------------------------------------------------------
   // Email
   // ---------------------------------------------------------------------------
@@ -119,5 +156,47 @@ abstract final class AuthValidator {
     }
 
     return null;
+  }
+}
+
+/// Labels used by the password-strength indicator.
+enum PasswordStrength { weak, fair, strong }
+
+extension PasswordStrengthX on PasswordStrength {
+  /// Width fraction used by the progress bar.
+  double get value {
+    switch (this) {
+      case PasswordStrength.weak:
+        return 0.25;
+      case PasswordStrength.fair:
+        return 0.65;
+      case PasswordStrength.strong:
+        return 1.0;
+    }
+  }
+
+  /// Human-readable label.
+  String get label {
+    switch (this) {
+      case PasswordStrength.weak:
+        return 'Weak';
+      case PasswordStrength.fair:
+        return 'Fair';
+      case PasswordStrength.strong:
+        return 'Strong';
+    }
+  }
+
+  /// Color that matches the strength level.
+  Color color(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    switch (this) {
+      case PasswordStrength.weak:
+        return colorScheme.error;
+      case PasswordStrength.fair:
+        return AppColors.warning;
+      case PasswordStrength.strong:
+        return AppColors.success;
+    }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/theme/design_system.dart';
 
@@ -18,6 +19,7 @@ class AuthTextField extends StatefulWidget {
     this.textInputAction,
     this.onChanged,
     this.onSubmitted,
+    this.inputFormatters,
     this.prefixIcon,
     this.suffix,
     this.errorText,
@@ -31,6 +33,7 @@ class AuthTextField extends StatefulWidget {
   final TextInputAction? textInputAction;
   final VoidCallback? onChanged;
   final ValueChanged<String>? onSubmitted;
+  final List<TextInputFormatter>? inputFormatters;
   final Widget? prefixIcon;
   final Widget? suffix;
   final String? errorText;
@@ -110,6 +113,7 @@ class AuthTextFieldState extends State<AuthTextField>
                 obscureText: widget.obscureText,
                 keyboardType: widget.keyboardType,
                 textInputAction: widget.textInputAction,
+                inputFormatters: widget.inputFormatters,
                 onChanged: (_) => widget.onChanged?.call(),
                 onSubmitted: widget.onSubmitted,
                 decoration: InputDecoration(

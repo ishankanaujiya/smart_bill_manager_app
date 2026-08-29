@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/validators/auth_validator.dart';
@@ -30,23 +31,31 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   final _nameFocus = FocusNode();
   final _phoneFocus = FocusNode();
   final _passwordFocus = FocusNode();
+  final _confirmPasswordFocus = FocusNode();
 
   final _nameFieldKey = GlobalKey<AuthTextFieldState>();
   final _phoneFieldKey = GlobalKey<AuthTextFieldState>();
   final _passwordFieldKey = GlobalKey<AuthTextFieldState>();
+  final _confirmPasswordFieldKey = GlobalKey<AuthTextFieldState>();
 
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _agreed = false;
 
   // ── Validation error state ──
   String? _nameError;
   String? _phoneError;
   String? _passwordError;
+  String? _confirmPasswordError;
   String? _agreedError;
+
+  // ── Password strength visibility ──
+  bool _showPasswordStrength = false;
 
   // ── Entrance animation ──
   late final AnimationController _entranceController;
@@ -88,9 +97,11 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
     _nameController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _nameFocus.dispose();
     _phoneFocus.dispose();
     _passwordFocus.dispose();
+    _confirmPasswordFocus.dispose();
     _entranceController.dispose();
     super.dispose();
   }
@@ -99,33 +110,36 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
     final nameErr = AuthValidator.fullName(_nameController.text);
     final phoneErr = AuthValidator.phoneNepal(_phoneController.text);
     final passErr = AuthValidator.password(_passwordController.text);
+    final confirmErr = AuthValidator.confirmPassword(
+      _confirmPasswordController.text,
+      _passwordController.text,
+    );
     final agreedErr = _agreed ? null : 'You must agree to the terms to continue';
 
     setState(() {
       _nameError = nameErr;
       _phoneError = phoneErr;
       _passwordError = passErr;
+      _confirmPasswordError = confirmErr;
       _agreedError = agreedErr;
     });
 
     if (nameErr != null) _nameFieldKey.currentState?.shake();
     if (phoneErr != null) _phoneFieldKey.currentState?.shake();
     if (passErr != null) _passwordFieldKey.currentState?.shake();
+    if (confirmErr != null) _confirmPasswordFieldKey.currentState?.shake();
 
     return nameErr == null &&
         phoneErr == null &&
         passErr == null &&
+        confirmErr == null &&
         agreedErr == null;
   }
 
   void _onNameChanged() {
-    final input = _nameController.text.trim();
-    if (input.isEmpty) {
-      if (_nameError != null) setState(() => _nameError = null);
-      return;
-    }
-    final err = AuthValidator.fullName(input);
-    if (err != _nameError) setState(() => _nameError = err);
+    // Clear any existing error while the user is still typing.
+    // Full validation is run when the user presses Continue.
+    if (_nameError != null) setState(() => _nameError = null);
   }
 
   void _onPhoneChanged() {
@@ -147,12 +161,30 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
 
   void _onPasswordChanged() {
     final input = _passwordController.text;
-    if (input.isEmpty) {
-      if (_passwordError != null) setState(() => _passwordError = null);
+
+    // Show the strength bar as soon as the user starts typing.
+    final shouldShowStrength = input.isNotEmpty;
+    if (shouldShowStrength != _showPasswordStrength) {
+      setState(() => _showPasswordStrength = shouldShowStrength);
+    }
+
+    // Clear any existing error while typing; validation runs on Continue.
+    if (_passwordError != null) {
+      setState(() => _passwordError = null);
       return;
     }
-    final err = AuthValidator.password(input);
-    if (err != _passwordError) setState(() => _passwordError = err);
+
+    // Trigger a rebuild so the strength bar updates on every keystroke.
+    if (input.isNotEmpty) {
+      setState(() {});
+    }
+  }
+
+  void _onConfirmPasswordChanged() {
+    // Clear any existing error while typing; validation runs on Continue.
+    if (_confirmPasswordError != null) {
+      setState(() => _confirmPasswordError = null);
+    }
   }
 
   void _onContinue() {
@@ -319,11 +351,63 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
 
                               const SizedBox(height: AppSpacing.xs),
 
+                              // Password strength indicator — only visible
+                              // once the user starts typing a password.
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.easeOut,
+                                alignment: Alignment.topCenter,
+                                child: _showPasswordStrength
+                                    ? _PasswordStrengthBar(
+                                        password: _passwordController.text,
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+
+                              const SizedBox(height: AppSpacing.lg),
+
+                              // Confirm password
                               Text(
-                                'Use 8+ characters, with a number',
-                                style: AppTextStyles.caption.copyWith(
+                                'Confirm password',
+                                style: AppTextStyles.labelLarge.copyWith(
+                                  color: colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              AuthTextField(
+                                key: _confirmPasswordFieldKey,
+                                controller: _confirmPasswordController,
+                                focusNode: _confirmPasswordFocus,
+                                obscureText: _obscureConfirmPassword,
+                                hint: 'Re-enter your password',
+                                keyboardType: TextInputType.visiblePassword,
+                                textInputAction: TextInputAction.done,
+                                prefixIcon: Icon(
+                                  Icons.lock_outline,
+                                  size: 22,
                                   color: colorScheme.onSurfaceVariant,
                                 ),
+                                onChanged: _onConfirmPasswordChanged,
+                                onSubmitted: (_) => _onContinue(),
+                                suffix: IconButton(
+                                  icon: Icon(
+                                    _obscureConfirmPassword
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    size: 20,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscureConfirmPassword =
+                                        !_obscureConfirmPassword,
+                                  ),
+                                  splashRadius: 20,
+                                ),
+                                errorText: _confirmPasswordError,
+                              ),
+                              AppFieldError(
+                                errorText: _confirmPasswordError,
+                                isDark: isDark,
                               ),
 
                               const SizedBox(height: AppSpacing.lg),
@@ -404,8 +488,12 @@ class _PhoneField extends StatelessWidget {
                 controller: controller,
                 focusNode: focusNode,
                 hint: '98XXXXXXXX',
-                keyboardType: TextInputType.phone,
+                keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.next,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
                 prefixIcon: Icon(
                   Icons.phone_outlined,
                   size: 22,
@@ -421,6 +509,71 @@ class _PhoneField extends StatelessWidget {
         AppFieldError(errorText: errorText, isDark: isDark),
       ],
     );
+  }
+}
+
+/// Animated password strength bar with colour-coded progress.
+class _PasswordStrengthBar extends StatelessWidget {
+  const _PasswordStrengthBar({required this.password});
+
+  final String password;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final strength = AuthValidator.passwordStrength(password);
+    final strengthColor = strength.color(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: AppRadius.radiusFull,
+                child: LinearProgressIndicator(
+                  value: strength.value,
+                  minHeight: 6,
+                  backgroundColor:
+                      colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  valueColor: AlwaysStoppedAnimation<Color>(strengthColor),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            SizedBox(
+              width: 48,
+              child: Text(
+                strength.label,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: strengthColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          _hintFor(strength),
+          style: AppTextStyles.caption.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _hintFor(PasswordStrength strength) {
+    switch (strength) {
+      case PasswordStrength.weak:
+        return 'Use 8+ characters, with a number';
+      case PasswordStrength.fair:
+        return 'Add uppercase, number or symbol';
+      case PasswordStrength.strong:
+        return 'Great password';
+    }
   }
 }
 
