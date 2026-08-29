@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/balance_summary_card.dart';
-import '../widgets/group_preview_card.dart';
-import '../widgets/quick_action_button.dart';
-import '../widgets/recent_activity_tile.dart';
+import '../widget/balance_summary_card.dart';
+import '../widget/group_preview_card.dart';
+import '../widget/quick_action_button.dart';
+import '../widget/recent_activity_tile.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});

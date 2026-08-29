@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'features/auth/presentation/screens/welcome_screen.dart';
+import 'features/auth/presentation/view/welcome_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
