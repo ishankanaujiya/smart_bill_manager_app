@@ -22,7 +22,12 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Sign in'), warnIfMissed: false);
-    await tester.pumpAndSettle();
+    // The sign-in header has a perpetual pulse animation, so pumpAndSettle
+    // would never finish. Pump fixed durations instead to let the entrance
+    // animation complete and the screen settle into its final layout.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 800));
 
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Sign in to see who owes what.'), findsOneWidget);

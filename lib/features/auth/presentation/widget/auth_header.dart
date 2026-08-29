@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/design_system.dart';
@@ -6,13 +8,17 @@ import '../../../../core/widgets/animated_entrance.dart';
 /// Header block used on authentication screens.
 ///
 /// Renders the design-spec header:
-///  - Decorative network pattern (circles + lines) to the right of the logo
+///  - Decorative network pattern (circles + lines) to the right of the logo.
+///    Each node gently pulses (scale + glow + opacity) on a staggered phase
+///    so the header feels alive and professional.
 ///  - App logo (rounded primary square + group icon, nudged slightly down)
 ///  - "Group Expense Splitter" brand mark with "Splitter" in primary
 ///  - Title + subtitle stacked beneath the brand with a compact gap
 ///
-/// All elements are staggered into view using the supplied [animation].
-class AuthHeader extends StatelessWidget {
+/// The entrance is staggered using the supplied [animation]. The pulse loop
+/// is driven by an internal [AnimationController] that lives for the lifetime
+/// of the widget.
+class AuthHeader extends StatefulWidget {
   const AuthHeader({
     super.key,
     required this.animation,
@@ -25,6 +31,29 @@ class AuthHeader extends StatelessWidget {
   final String? subtitle;
 
   @override
+  State<AuthHeader> createState() => _AuthHeaderState();
+}
+
+class _AuthHeaderState extends State<AuthHeader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -33,29 +62,36 @@ class AuthHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final patternWidth =
-            (constraints.maxWidth - logoSize - 24).clamp(160.0, 230.0);
+        final fullWidth = constraints.maxWidth;
 
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            // Network pattern — positioned to the right of the logo.
+            // Network pattern — spans the full header width so that
+            // coordinates inside the painter map directly to the screen.
             Positioned(
               top: 0,
-              left: logoSize - 4,
+              left: 0,
+              right: 0,
               child: FadeTransition(
                 opacity: CurvedAnimation(
-                  parent: animation,
+                  parent: widget.animation,
                   curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
                 ),
                 child: SizedBox(
-                  width: patternWidth,
-                  height: 100,
-                  child: CustomPaint(
-                    painter: _NetworkPatternPainter(
-                      colorScheme: colorScheme,
-                      isDark: isDark,
-                    ),
+                  width: fullWidth,
+                  height: 140,
+                  child: AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, _) {
+                      return CustomPaint(
+                        painter: _NetworkPatternPainter(
+                          colorScheme: colorScheme,
+                          isDark: isDark,
+                          pulse: _pulseController.value,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -70,7 +106,7 @@ class AuthHeader extends StatelessWidget {
 
                 // Logo with soft primary glow.
                 StaggeredEntrance(
-                  animation: animation,
+                  animation: widget.animation,
                   interval: const Interval(
                     0.0,
                     0.45,
@@ -103,11 +139,11 @@ class AuthHeader extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.md),
 
                 // Brand text directly below the logo.
                 StaggeredEntrance(
-                  animation: animation,
+                  animation: widget.animation,
                   interval: const Interval(
                     0.05,
                     0.50,
@@ -137,14 +173,14 @@ class AuthHeader extends StatelessWidget {
 
                 // Title
                 StaggeredEntrance(
-                  animation: animation,
+                  animation: widget.animation,
                   interval: const Interval(
                     0.15,
                     0.60,
                     curve: Curves.easeOutCubic,
                   ),
                   child: Text(
-                    title,
+                    widget.title,
                     style: AppTextStyles.headlineLarge.copyWith(
                       color: colorScheme.onSurface,
                       fontWeight: FontWeight.w800,
@@ -153,17 +189,17 @@ class AuthHeader extends StatelessWidget {
                   ),
                 ),
 
-                if (subtitle != null) ...[
+                if (widget.subtitle != null) ...[
                   const SizedBox(height: AppSpacing.xs),
                   StaggeredEntrance(
-                    animation: animation,
+                    animation: widget.animation,
                     interval: const Interval(
                       0.22,
                       0.65,
                       curve: Curves.easeOutCubic,
                     ),
                     child: Text(
-                      subtitle!,
+                      widget.subtitle!,
                       style: AppTextStyles.bodyLarge.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -185,16 +221,31 @@ class AuthHeader extends StatelessWidget {
 
 /// Paints a sparse network of circles + lines that originates near the logo.
 ///
-/// The pattern has three visible nodes (large primary, small blue, small green)
-/// connected by thin lines from the left edge of the painter.
+/// Each node gently pulses on a staggered phase derived from [pulse] so the
+/// pattern feels alive without being distracting. The pulse modulates:
+///  - node radius (subtle scale, ±18 %)
+///  - glow radius and alpha
+///  - core opacity (a soft "blink")
 class _NetworkPatternPainter extends CustomPainter {
   const _NetworkPatternPainter({
     required this.colorScheme,
     required this.isDark,
+    required this.pulse,
   });
 
   final ColorScheme colorScheme;
   final bool isDark;
+  final double pulse; // 0..1, loops forever
+
+  /// Returns a 0..1 pulse envelope for a node with the given phase offset.
+  ///
+  /// Uses a smooth sine bell so the node swells and fades gently rather than
+  /// snapping on/off. [phase] shifts the wave so nodes don't all blink in
+  /// unison — this is what makes the motion feel professional.
+  double _nodePulse(double phase) {
+    final t = (pulse + phase) % 1.0;
+    return 0.5 - 0.5 * math.cos(2 * math.pi * t);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -206,56 +257,60 @@ class _NetworkPatternPainter extends CustomPainter {
       ..strokeWidth = 1.2
       ..color = colorScheme.primary.withValues(alpha: isDark ? 0.28 : 0.14);
 
-    final origin = Offset(w * 0.02, h * 0.26);
+    // Origin — at the logo icon's visual center.
+    // The foreground Column has 24px top padding (AppSpacing.xxl), then the
+    // logo is 52px tall with the 28px icon nudged down via Alignment(0, 0.25).
+    // Icon center Y ≈ 24 + 26 + 3 ≈ 53px from the top of the header.
+    // Icon center X ≈ 26px (half of the 52px logo).
+    // The line emerges from inside the icon, hidden by the logo container.
+    final origin = Offset(26.0, 53.0);
 
-    final large = _Node(
-      Offset(w * 0.28, h * 0.08),
-      6.5,
-      colorScheme.primary,
-    );
+    // Each node has a phase offset so they pulse in sequence.
+    // Node 0 is the large primary "middle" node; the others branch from it.
+    // Coordinates map to the full screen width (w) and 140px height (h).
+    final nodes = <_Node>[
+      _Node(Offset(w * 0.45, h * 0.06), 6.5, colorScheme.primary, 0.00),
+      _Node(Offset(w * 0.85, h * 0.22), 4.5, colorScheme.secondary, 0.33),
+      _Node(Offset(w * 0.72, h * 0.45), 4.0, colorScheme.tertiary, 0.66),
+      _Node(Offset(w * 0.40, h * 0.55), 4.0, colorScheme.secondary, 0.50),
+    ];
 
-    final blue = _Node(
-      Offset(w * 0.82, h * 0.12),
-      4.5,
-      colorScheme.secondary,
-    );
+    // Draw lines first so they sit behind nodes.
+    canvas.drawLine(origin, nodes[0].offset, linePaint);
+    canvas.drawLine(nodes[0].offset, nodes[1].offset, linePaint);
+    canvas.drawLine(nodes[0].offset, nodes[2].offset, linePaint);
+    canvas.drawLine(nodes[0].offset, nodes[3].offset, linePaint);
 
-    final green = _Node(
-      Offset(w * 0.72, h * 0.75),
-      4.0,
-      colorScheme.tertiary,
-    );
-
-    final nodes = [large, blue, green];
-
-    canvas.drawLine(origin, large.offset, linePaint);
-    canvas.drawLine(large.offset, blue.offset, linePaint);
-    canvas.drawLine(large.offset, green.offset, linePaint);
-
+    // Draw filled circles only — no glow ring, no stroke.
+    // The pulse animates scale and opacity for a clean "blink" effect.
     for (final node in nodes) {
-      final glowPaint = Paint()
-        ..color = node.color.withValues(alpha: isDark ? 0.16 : 0.10)
-        ..style = PaintingStyle.fill;
+      final p = _nodePulse(node.phase); // 0..1 bell curve
 
-      canvas.drawCircle(node.offset, node.radius * 2.2, glowPaint);
+      // Scale radius subtly (±18 %).
+      final scale = 1.0 + 0.18 * (p - 0.5) * 2; // 0.82..1.18
+      final radius = node.radius * scale;
 
+      // Opacity dips at the trough — the "blink".
+      final coreAlpha = 0.55 + 0.45 * p;
       final nodePaint = Paint()
-        ..color = node.color
+        ..color = node.color.withValues(alpha: coreAlpha.clamp(0.0, 1.0))
         ..style = PaintingStyle.fill;
-
-      canvas.drawCircle(node.offset, node.radius, nodePaint);
+      canvas.drawCircle(node.offset, radius, nodePaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _NetworkPatternPainter old) =>
-      old.colorScheme != colorScheme || old.isDark != isDark;
+      old.colorScheme != colorScheme ||
+      old.isDark != isDark ||
+      old.pulse != pulse;
 }
 
 class _Node {
-  const _Node(this.offset, this.radius, this.color);
+  const _Node(this.offset, this.radius, this.color, this.phase);
 
   final Offset offset;
   final double radius;
   final Color color;
+  final double phase; // 0..1 offset within the pulse loop
 }
