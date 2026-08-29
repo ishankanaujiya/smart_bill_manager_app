@@ -8,12 +8,13 @@ import '../../../../app/theme/design_system.dart';
 typedef Country = cp.Country;
 
 /// A tappable button that displays the selected country's flag emoji and
-/// dial code, and opens the `country_picker` package's built-in picker
-/// when tapped.
+/// dial code.
 ///
-/// The picker provides a full list of countries with search, flag icons,
-/// and dial codes — replacing the previous hand-rolled bottom sheet.
-class CountryCodePicker extends StatelessWidget {
+/// The app is currently available in Nepal only, so the picker is locked
+/// to Nepal. Tapping the button shows a snackbar informing the user that
+/// country selection is unavailable, with a linear progress bar that
+/// fills over 1.5 seconds as a loading animation.
+class CountryCodePicker extends StatefulWidget {
   const CountryCodePicker({
     super.key,
     required this.selected,
@@ -37,14 +38,37 @@ class CountryCodePicker extends StatelessWidget {
   }
 
   @override
+  State<CountryCodePicker> createState() => _CountryCodePickerState();
+}
+
+class _CountryCodePickerState extends State<CountryCodePicker>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _progressController;
+
+  @override
+  void initState() {
+    super.initState();
+    _progressController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+  }
+
+  @override
+  void dispose() {
+    _progressController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
     final borderColor =
-        hasError ? colorScheme.error : colorScheme.outlineVariant;
+        widget.hasError ? colorScheme.error : colorScheme.outlineVariant;
 
     return GestureDetector(
-      onTap: () => _openPicker(context),
+      onTap: () => _showLockedMessage(context),
       behavior: HitTestBehavior.opaque,
       child: Container(
         height: 56,
@@ -52,7 +76,7 @@ class CountryCodePicker extends StatelessWidget {
           color: colorScheme.surfaceContainerHighest,
           border: Border.all(
             color: borderColor,
-            width: hasError ? 2 : 1,
+            width: widget.hasError ? 2 : 1,
           ),
           borderRadius: AppRadius.radiusMd,
         ),
@@ -64,12 +88,12 @@ class CountryCodePicker extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  selected.flagEmoji,
+                  widget.selected.flagEmoji,
                   style: const TextStyle(fontSize: 20),
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Text(
-                  '+${selected.phoneCode}',
+                  '+${widget.selected.phoneCode}',
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: colorScheme.onSurface,
                     fontWeight: FontWeight.w600,
@@ -89,60 +113,64 @@ class CountryCodePicker extends StatelessWidget {
     );
   }
 
-  void _openPicker(BuildContext context) {
+  /// Shows a snackbar informing the user that country selection is locked
+  /// to Nepal, with a linear progress bar that fills over 1.5 seconds.
+  void _showLockedMessage(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    cp.showCountryPicker(
-      context: context,
-      showPhoneCode: true,
-      countryListTheme: cp.CountryListThemeData(
-        // Bottom sheet styling
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(AppRadius.xl),
-          topRight: Radius.circular(AppRadius.xl),
+    // Reset and start the progress animation from 0 → 1 over 1.5 seconds.
+    _progressController.forward(from: 0);
+
+    final progress = CurvedAnimation(
+      parent: _progressController,
+      curve: Curves.easeInOut,
+    );
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'For now the app is only available in Nepal so we cannot '
+              'choose other country for now',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AnimatedBuilder(
+              animation: progress,
+              builder: (context, _) {
+                return ClipRRect(
+                  borderRadius: AppRadius.radiusFull,
+                  child: LinearProgressIndicator(
+                    value: progress.value,
+                    minHeight: 4,
+                    backgroundColor:
+                        colorScheme.onSurface.withValues(alpha: 0.1),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      colorScheme.primary,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
         backgroundColor: colorScheme.surface,
-
-        // Search field styling
-        searchTextStyle: AppTextStyles.bodyMedium.copyWith(
-          color: colorScheme.onSurface,
+        duration: const Duration(milliseconds: 1500),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.radiusMd,
         ),
-        inputDecoration: InputDecoration(
-          hintText: 'Search country',
-          hintStyle: AppTextStyles.bodyMedium.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            color: colorScheme.onSurfaceVariant,
-          ),
-          filled: true,
-          fillColor: colorScheme.surfaceContainerHighest,
-          border: OutlineInputBorder(
-            borderRadius: AppRadius.radiusMd,
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: AppRadius.radiusMd,
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: AppRadius.radiusMd,
-            borderSide: BorderSide(color: colorScheme.primary),
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg,
-            vertical: AppSpacing.md,
-          ),
+        margin: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.lg,
         ),
-
-        // Country list item styling
-        textStyle: AppTextStyles.bodyMedium.copyWith(
-          color: colorScheme.onSurface,
-        ),
-        flagSize: 22,
       ),
-      onSelect: onSelected,
     );
   }
 }

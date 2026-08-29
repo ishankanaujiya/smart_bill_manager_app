@@ -31,7 +31,7 @@ void main() {
 
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Sign in to see who owes what.'), findsOneWidget);
-    expect(find.text('Mobile number'), findsOneWidget);
+    expect(find.text('Email address'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
   });
 }

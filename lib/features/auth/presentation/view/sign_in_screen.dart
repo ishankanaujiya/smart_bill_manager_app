@@ -1,13 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/validators/auth_validator.dart';
 import '../../../../core/widgets/app_field_error.dart';
 import '../widget/auth_header.dart';
-import '../widget/country_code_picker.dart';
 
 /// Sign-in screen for returning users.
 ///
@@ -36,22 +36,19 @@ class SignInScreen extends StatefulWidget {
 class _SignInScreenState extends State<SignInScreen>
     with TickerProviderStateMixin {
   // ── Form state ──
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _phoneFocus = FocusNode();
+  final _emailFocus = FocusNode();
   final _passwordFocus = FocusNode();
-  final _phoneFieldKey = GlobalKey<_AuthTextFieldState>();
+  final _emailFieldKey = GlobalKey<_AuthTextFieldState>();
   final _passwordFieldKey = GlobalKey<_AuthTextFieldState>();
 
   bool _obscurePassword = true;
   bool _rememberMe = false;
 
   // ── Validation error state ──
-  String? _phoneError;
+  String? _emailError;
   String? _passwordError;
-
-  // ── Selected country for phone dialing code ──
-  Country _selectedCountry = CountryCodePicker.defaultCountry;
 
   // ── Entrance animation ──
   late final AnimationController _entranceController;
@@ -97,35 +94,54 @@ class _SignInScreenState extends State<SignInScreen>
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
-    _phoneFocus.dispose();
+    _emailFocus.dispose();
     _passwordFocus.dispose();
     _entranceController.dispose();
     super.dispose();
   }
 
   bool _validate() {
-    final phoneErr = AuthValidator.phoneNepal(_phoneController.text);
+    final emailErr = AuthValidator.email(_emailController.text);
     final passErr = AuthValidator.passwordRequired(_passwordController.text);
 
     setState(() {
-      _phoneError = phoneErr;
+      _emailError = emailErr;
       _passwordError = passErr;
     });
 
-    if (phoneErr != null) {
-      _phoneFieldKey.currentState?.shake();
+    if (emailErr != null) {
+      _emailFieldKey.currentState?.shake();
     }
     if (passErr != null) {
       _passwordFieldKey.currentState?.shake();
     }
 
-    return phoneErr == null && passErr == null;
+    return emailErr == null && passErr == null;
   }
 
-  void _clearPhoneError() {
-    if (_phoneError != null) setState(() => _phoneError = null);
+  /// Validates the email field live as the user types.
+  ///
+  /// Only shows an error once the user has typed enough to look like an
+  /// email attempt (contains '@'). Before that, no error is shown — the
+  /// full validation runs on submit.
+  void _onEmailChanged() {
+    final input = _emailController.text.trim();
+    if (input.isEmpty) {
+      if (_emailError != null) setState(() => _emailError = null);
+      return;
+    }
+
+    // Only validate once the user has typed an '@' — before that they're
+    // still entering the local part and we don't want to be intrusive.
+    if (!input.contains('@')) {
+      if (_emailError != null) setState(() => _emailError = null);
+      return;
+    }
+
+    final err = AuthValidator.email(input);
+    if (err != _emailError) setState(() => _emailError = err);
   }
 
   void _clearPasswordError() {
@@ -166,25 +182,21 @@ class _SignInScreenState extends State<SignInScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Mobile number
+                              // Email address
                               Text(
-                                'Mobile number',
+                                'Email address',
                                 style: AppTextStyles.labelLarge.copyWith(
                                   color: colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: AppSpacing.xs),
-                              _PhoneField(
-                                fieldKey: _phoneFieldKey,
-                                controller: _phoneController,
-                                focusNode: _phoneFocus,
+                              _EmailField(
+                                fieldKey: _emailFieldKey,
+                                controller: _emailController,
+                                focusNode: _emailFocus,
                                 nextFocus: _passwordFocus,
-                                selectedCountry: _selectedCountry,
-                                onCountrySelected: (country) {
-                                  setState(() => _selectedCountry = country);
-                                },
-                                errorText: _phoneError,
-                                onChanged: _clearPhoneError,
+                                errorText: _emailError,
+                                onChanged: _onEmailChanged,
                               ),
 
                               const SizedBox(height: AppSpacing.lg),
@@ -225,7 +237,7 @@ class _SignInScreenState extends State<SignInScreen>
                                   child: Text(
                                     'Forgot password?',
                                     style: AppTextStyles.labelLarge.copyWith(
-                                      color: colorScheme.secondary,
+                                      color: colorScheme.primary,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -371,15 +383,13 @@ class _SignInScreenState extends State<SignInScreen>
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Phone number field split into country-code dropdown + number text field.
-class _PhoneField extends StatelessWidget {
-  const _PhoneField({
+/// Email address field with leading icon and animated error.
+class _EmailField extends StatelessWidget {
+  const _EmailField({
     this.fieldKey,
     required this.controller,
     required this.focusNode,
     required this.nextFocus,
-    required this.selectedCountry,
-    required this.onCountrySelected,
     this.errorText,
     this.onChanged,
   });
@@ -388,8 +398,6 @@ class _PhoneField extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final FocusNode nextFocus;
-  final Country selectedCountry;
-  final ValueChanged<Country> onCountrySelected;
   final String? errorText;
   final VoidCallback? onChanged;
 
@@ -401,30 +409,16 @@ class _PhoneField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            CountryCodePicker(
-              selected: selectedCountry,
-              onSelected: onCountrySelected,
-              hasError: errorText != null,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: _AuthTextField(
-                key: fieldKey,
-                controller: controller,
-                focusNode: focusNode,
-                hint: '98XXXXXXXX',
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.next,
-                maxLength: 10,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                onChanged: onChanged,
-                onSubmitted: (_) => FocusScope.of(context).requestFocus(nextFocus),
-                errorText: errorText,
-              ),
-            ),
-          ],
+        _AuthTextField(
+          key: fieldKey,
+          controller: controller,
+          focusNode: focusNode,
+          hint: 'you@example.com',
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          onChanged: onChanged,
+          onSubmitted: (_) => FocusScope.of(context).requestFocus(nextFocus),
+          errorText: errorText,
         ),
         AppFieldError(errorText: errorText, isDark: isDark),
       ],
@@ -488,7 +482,7 @@ class _PasswordField extends StatelessWidget {
   }
 }
 
-/// Reusable input field shell used by [_PhoneField] and [_PasswordField].
+/// Reusable input field shell used by [_EmailField] and [_PasswordField].
 ///
 /// Provides the focus-driven animated border, the filled background, and
 /// a horizontal shake that is triggered via [shake] when validation fails.
@@ -502,8 +496,6 @@ class _AuthTextField extends StatefulWidget {
     this.obscureText = false,
     this.keyboardType,
     this.textInputAction,
-    this.maxLength,
-    this.inputFormatters,
     this.onChanged,
     this.onSubmitted,
     this.suffix,
@@ -516,8 +508,6 @@ class _AuthTextField extends StatefulWidget {
   final bool obscureText;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
-  final int? maxLength;
-  final List<TextInputFormatter>? inputFormatters;
   final VoidCallback? onChanged;
   final ValueChanged<String>? onSubmitted;
   final Widget? suffix;
@@ -598,8 +588,6 @@ class _AuthTextFieldState extends State<_AuthTextField>
                 obscureText: widget.obscureText,
                 keyboardType: widget.keyboardType,
                 textInputAction: widget.textInputAction,
-                maxLength: widget.maxLength,
-                inputFormatters: widget.inputFormatters,
                 onChanged: (_) => widget.onChanged?.call(),
                 onSubmitted: widget.onSubmitted,
                 decoration: InputDecoration(
@@ -664,10 +652,44 @@ class _BrandCheckbox extends StatelessWidget {
 }
 
 /// Full-width "Sign in" primary button.
-class _SignInButton extends StatelessWidget {
+/// Full-width "Sign in" primary button with a blinking blur glow.
+///
+/// A soft coloured shadow behind the button pulses in and out using a
+/// sine-bell curve, creating a "blinking blur" effect that draws attention
+/// to the CTA without altering the button's own background colour.
+class _SignInButton extends StatefulWidget {
   const _SignInButton({required this.onPressed});
 
   final VoidCallback onPressed;
+
+  @override
+  State<_SignInButton> createState() => _SignInButtonState();
+}
+
+class _SignInButtonState extends State<_SignInButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _blurController;
+  late final Animation<double> _blur;
+
+  @override
+  void initState() {
+    super.initState();
+    _blurController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat();
+
+    _blur = CurvedAnimation(
+      parent: _blurController,
+      curve: Curves.easeInOutSine,
+    );
+  }
+
+  @override
+  void dispose() {
+    _blurController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -676,19 +698,44 @@ class _SignInButton extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       height: 56,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppRadius.radiusMd,
+      child: AnimatedBuilder(
+        animation: _blur,
+        builder: (context, child) {
+          // Smooth sine-bell: 0 → 1 → 0 with no cusps.
+          // (1 - cos(2πt)) / 2 gives a perfect 0 → 1 → 0 wave.
+          final pulse = (1 - math.cos(math.pi * 2 * _blur.value)) * 0.5;
+
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: AppRadius.radiusMd,
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.primary.withValues(
+                    alpha: 0.15 + 0.40 * pulse,
+                  ),
+                  blurRadius: 6 + 20 * pulse,
+                  spreadRadius: 1 + 2 * pulse,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: child,
+          );
+        },
+        child: FilledButton(
+          onPressed: widget.onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor: colorScheme.primary,
+            foregroundColor: colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(
+              borderRadius: AppRadius.radiusMd,
+            ),
+            textStyle: AppTextStyles.labelLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          textStyle: AppTextStyles.labelLarge.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          child: const Text('Sign in'),
         ),
-        child: const Text('Sign in'),
       ),
     );
   }

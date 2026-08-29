@@ -6,39 +6,25 @@ abstract final class AuthValidator {
   AuthValidator._();
 
   // ---------------------------------------------------------------------------
-  // Mobile number
+  // Email
   // ---------------------------------------------------------------------------
 
-  /// Validates a Nepali mobile number without the country code.
-  ///
-  /// Accepts numbers starting with 98 or 97 followed by 8 more digits,
-  /// giving the common 10-digit Nepali mobile format.
-  static const String _mobilePattern = r'^(98|97)\d{8}$';
+  /// RFC 5322–simplified email pattern.
+  static const String _emailPattern =
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$';
 
-  static String? phoneNepal(String? value) {
+  static String? email(String? value) {
     final input = value?.trim() ?? '';
 
     if (input.isEmpty) {
-      return 'Mobile number is required';
+      return 'Email address is required';
     }
 
-    if (!RegExp(_mobilePattern).hasMatch(input)) {
-      return 'Enter a valid 10-digit mobile number';
+    if (!RegExp(_emailPattern).hasMatch(input)) {
+      return 'Enter a valid email address';
     }
 
     return null;
-  }
-
-  /// Strips a leading '+977' or '977' if the user typed it, returning only
-  /// the 10-digit local number.
-  static String normalizeMobileNumber(String value) {
-    var input = value.trim().replaceAll(' ', '');
-    if (input.startsWith('+977')) {
-      input = input.substring(4);
-    } else if (input.startsWith('977')) {
-      input = input.substring(3);
-    }
-    return input;
   }
 
   // ---------------------------------------------------------------------------
