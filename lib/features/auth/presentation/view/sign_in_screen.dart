@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/validators/auth_validator.dart';
@@ -50,7 +51,7 @@ class _SignInScreenState extends State<SignInScreen>
   String? _passwordError;
 
   // ── Selected country for phone dialing code ──
-  Country _selectedCountry = Country.defaultCountry;
+  Country _selectedCountry = CountryCodePicker.defaultCountry;
 
   // ── Entrance animation ──
   late final AnimationController _entranceController;
@@ -155,7 +156,7 @@ class _SignInScreenState extends State<SignInScreen>
                         subtitle: 'Sign in to see who owes what.',
                       ),
 
-                      const SizedBox(height: AppSpacing.md),
+                      const SizedBox(height: AppSpacing.xl),
 
                       // ── Form ──
                       SlideTransition(
@@ -283,7 +284,11 @@ class _SignInScreenState extends State<SignInScreen>
                                   Expanded(
                                     child: _SocialButton(
                                       label: 'Google',
-                                      icon: const _GoogleLogo(),
+                                      icon: SvgPicture.asset(
+                                        'assets/icons/google.svg',
+                                        width: 20,
+                                        height: 20,
+                                      ),
                                       onTap: () {
                                         // TODO(auth): Google sign-in
                                       },
@@ -293,8 +298,14 @@ class _SignInScreenState extends State<SignInScreen>
                                   Expanded(
                                     child: _SocialButton(
                                       label: 'Apple',
-                                      icon: _AppleIcon(
-                                        color: colorScheme.onSurface,
+                                      icon: SvgPicture.asset(
+                                        'assets/icons/apple.svg',
+                                        width: 20,
+                                        height: 20,
+                                        colorFilter: ColorFilter.mode(
+                                          colorScheme.onSurface,
+                                          BlendMode.srcIn,
+                                        ),
                                       ),
                                       onTap: () {
                                         // TODO(auth): Apple sign-in
@@ -755,186 +766,6 @@ class _SocialButton extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Google "G" logo rendered via [CustomPainter].
-class _GoogleLogo extends StatelessWidget {
-  const _GoogleLogo();
-
-  @override
-  Widget build(BuildContext context) {
-    return const CustomPaint(painter: _GoogleLogoPainter());
-  }
-}
-
-class _GoogleLogoPainter extends CustomPainter {
-  const _GoogleLogoPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    // Blue arc
-    final bluePaint = Paint()
-      ..color = const Color(0xFF4285F4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.18
-      ..strokeCap = StrokeCap.butt;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius * 0.72),
-      -0.52,
-      4.19,
-      false,
-      bluePaint,
-    );
-
-    // Red arc
-    final redPaint = Paint()
-      ..color = const Color(0xFFEA4335)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.18
-      ..strokeCap = StrokeCap.butt;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius * 0.72),
-      -0.52 + 4.19,
-      1.05,
-      false,
-      redPaint,
-    );
-
-    // Yellow arc
-    final yellowPaint = Paint()
-      ..color = const Color(0xFFFBBC05)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.18
-      ..strokeCap = StrokeCap.butt;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius * 0.72),
-      -0.52 + 4.19 + 1.05,
-      1.05,
-      false,
-      yellowPaint,
-    );
-
-    // Green arc
-    final greenPaint = Paint()
-      ..color = const Color(0xFF34A853)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.18
-      ..strokeCap = StrokeCap.butt;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius * 0.72),
-      -0.52 + 4.19 + 1.05 + 1.05,
-      1.09,
-      false,
-      greenPaint,
-    );
-
-    // White fill over the inner gap (simulate the inner cutout)
-    final whitePaint = Paint()..color = const Color(0xFFFFFFFF);
-    canvas.drawCircle(center, radius * 0.55, whitePaint);
-
-    // "G" horizontal bar — blue
-    final barPaint = Paint()
-      ..color = const Color(0xFF4285F4)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(
-      Rect.fromLTWH(
-        center.dx,
-        center.dy - radius * 0.13,
-        radius * 0.72,
-        radius * 0.26,
-      ),
-      barPaint,
-    );
-
-    // Redraw inner white circle to clean up
-    canvas.drawCircle(center, radius * 0.55, whitePaint);
-
-    // Central dot (gives G inner arc closure)
-    final dotPaint = Paint()..color = const Color(0xFF4285F4);
-    canvas.drawCircle(
-      Offset(center.dx + radius * 0.60, center.dy),
-      radius * 0.13,
-      dotPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Minimal Apple logo icon.
-class _AppleIcon extends StatelessWidget {
-  const _AppleIcon({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: CustomPaint(
-        painter: _AppleIconPainter(color: color),
-      ),
-    );
-  }
-}
-
-class _AppleIconPainter extends CustomPainter {
-  const _AppleIconPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final w = size.width;
-    final h = size.height;
-
-    // Apple body: circle with slight bottom dimple
-    final body = Path();
-    body.addOval(
-      Rect.fromCenter(
-        center: Offset(w * 0.5, h * 0.58),
-        width: w * 0.72,
-        height: h * 0.72,
-      ),
-    );
-
-    // Dimple cutout at the bottom
-    final bite = Path()
-      ..addOval(
-        Rect.fromCenter(
-          center: Offset(w * 0.5, h * 0.9),
-          width: w * 0.28,
-          height: h * 0.32,
-        ),
-      );
-
-    final appleBody = Path.combine(PathOperation.difference, body, bite);
-
-    // Leaf
-    final leaf = Path()
-      ..addOval(
-        Rect.fromCenter(
-          center: Offset(w * 0.55, h * 0.22),
-          width: w * 0.26,
-          height: h * 0.18,
-        ),
-      );
-
-    canvas.drawPath(appleBody, paint);
-    canvas.drawPath(leaf, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Legal footer with tappable "Terms of Service" and "Privacy Policy" links.

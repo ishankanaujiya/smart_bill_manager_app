@@ -174,7 +174,7 @@ abstract final class AppTextStyles {
   static TextStyle get bodyMedium => _base.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w400,
-        letterSpacing: 0.25,
+        // letterSpacing: 0.25,
         height: 1.43,
       );
 

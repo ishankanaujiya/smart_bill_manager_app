@@ -183,6 +183,7 @@ class _AuthHeaderState extends State<AuthHeader>
                     widget.title,
                     style: AppTextStyles.headlineLarge.copyWith(
                       color: colorScheme.onSurface,
+                      fontSize: 30,
                       fontWeight: FontWeight.w800,
                       height: 1.1,
                     ),
@@ -202,6 +203,8 @@ class _AuthHeaderState extends State<AuthHeader>
                       widget.subtitle!,
                       style: AppTextStyles.bodyLarge.copyWith(
                         color: colorScheme.onSurfaceVariant,
+                        // fontSize: 13,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),

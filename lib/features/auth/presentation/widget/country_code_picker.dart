@@ -1,70 +1,47 @@
+import 'package:country_picker/country_picker.dart' as cp;
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/design_system.dart';
 
-/// Minimal country model for the country-code selector.
-class Country {
-  const Country({
-    required this.name,
-    required this.countryCode,
-    required this.phoneCode,
-    required this.flagEmoji,
-  });
+/// Re-export the [Country] type from the `country_picker` package so callers
+/// don't need to import it separately.
+typedef Country = cp.Country;
 
-  final String name;
-  final String countryCode;
-  final String phoneCode;
-  final String flagEmoji;
-
-  /// Default list of countries for the picker.
-  static const List<Country> defaults = [
-    Country(name: 'Nepal', countryCode: 'NP', phoneCode: '977', flagEmoji: '🇳🇵'),
-    Country(name: 'India', countryCode: 'IN', phoneCode: '91', flagEmoji: '🇮🇳'),
-    Country(name: 'United States', countryCode: 'US', phoneCode: '1', flagEmoji: '🇺🇸'),
-    Country(name: 'United Kingdom', countryCode: 'GB', phoneCode: '44', flagEmoji: '🇬🇧'),
-    Country(name: 'Australia', countryCode: 'AU', phoneCode: '61', flagEmoji: '🇦🇺'),
-    Country(name: 'Bangladesh', countryCode: 'BD', phoneCode: '880', flagEmoji: '🇧🇩'),
-    Country(name: 'Pakistan', countryCode: 'PK', phoneCode: '92', flagEmoji: '🇵🇰'),
-    Country(name: 'Sri Lanka', countryCode: 'LK', phoneCode: '94', flagEmoji: '🇱🇰'),
-  ];
-
-  static const Country defaultCountry = Country(
-    name: 'Nepal',
-    countryCode: 'NP',
-    phoneCode: '977',
-    flagEmoji: '🇳🇵',
-  );
-}
-
-/// A button that displays the selected country code and opens a bottom sheet
-/// to pick another country.
+/// A tappable button that displays the selected country's flag emoji and
+/// dial code, and opens the `country_picker` package's built-in picker
+/// when tapped.
+///
+/// The picker provides a full list of countries with search, flag icons,
+/// and dial codes — replacing the previous hand-rolled bottom sheet.
 class CountryCodePicker extends StatelessWidget {
   const CountryCodePicker({
     super.key,
     required this.selected,
     required this.onSelected,
     this.hasError = false,
-    this.errorColor,
-    this.borderColor,
-    this.fillColor,
-    this.isDark = false,
   });
 
+  /// The currently selected [Country].
   final Country selected;
+
+  /// Called when the user picks a new country from the picker.
   final ValueChanged<Country> onSelected;
+
+  /// Whether the parent field is in an error state — controls the border.
   final bool hasError;
-  final Color? errorColor;
-  final Color? borderColor;
-  final Color? fillColor;
-  final bool isDark;
+
+  /// Default country (Nepal) used by the sign-in screen.
+  static Country get defaultCountry {
+    final service = cp.CountryService();
+    return service.findByCode('NP') ?? service.getAll().first;
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final activeBorder = hasError
-        ? (errorColor ?? colorScheme.error)
-        : (borderColor ?? colorScheme.outlineVariant);
+    final borderColor =
+        hasError ? colorScheme.error : colorScheme.outlineVariant;
 
     return GestureDetector(
       onTap: () => _openPicker(context),
@@ -72,9 +49,9 @@ class CountryCodePicker extends StatelessWidget {
       child: Container(
         height: 56,
         decoration: BoxDecoration(
-          color: fillColor ?? colorScheme.surfaceContainerHighest,
+          color: colorScheme.surfaceContainerHighest,
           border: Border.all(
-            color: activeBorder,
+            color: borderColor,
             width: hasError ? 2 : 1,
           ),
           borderRadius: AppRadius.radiusMd,
@@ -115,167 +92,57 @@ class CountryCodePicker extends StatelessWidget {
   void _openPicker(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    showModalBottomSheet<void>(
+    cp.showCountryPicker(
       context: context,
-      backgroundColor: colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
+      showPhoneCode: true,
+      countryListTheme: cp.CountryListThemeData(
+        // Bottom sheet styling
+        borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(AppRadius.xl),
           topRight: Radius.circular(AppRadius.xl),
         ),
-      ),
-      builder: (context) => _CountryPickerSheet(
-        selected: selected,
-        onSelected: (country) {
-          onSelected(country);
-          Navigator.of(context).pop();
-        },
-      ),
-    );
-  }
-}
+        backgroundColor: colorScheme.surface,
 
-class _CountryPickerSheet extends StatefulWidget {
-  const _CountryPickerSheet({
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final Country selected;
-  final ValueChanged<Country> onSelected;
-
-  @override
-  State<_CountryPickerSheet> createState() => _CountryPickerSheetState();
-}
-
-class _CountryPickerSheetState extends State<_CountryPickerSheet> {
-  late final TextEditingController _searchController;
-  late List<Country> _filtered;
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController = TextEditingController();
-    _filtered = Country.defaults;
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _onSearch(String value) {
-    final query = value.trim().toLowerCase();
-    setState(() {
-      _filtered = Country.defaults.where((c) {
-        return c.name.toLowerCase().contains(query) ||
-            c.countryCode.toLowerCase().contains(query) ||
-            c.phoneCode.contains(query);
-      }).toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
-          vertical: AppSpacing.md,
+        // Search field styling
+        searchTextStyle: AppTextStyles.bodyMedium.copyWith(
+          color: colorScheme.onSurface,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag handle
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colorScheme.outlineVariant,
-                borderRadius: AppRadius.radiusFull,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Select country',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _searchController,
-              autofocus: true,
-              onChanged: _onSearch,
-              decoration: InputDecoration(
-                hintText: 'Search country',
-                prefixIcon: const Icon(Icons.search_rounded),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: AppRadius.radiusMd,
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: AppRadius.radiusMd,
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: AppRadius.radiusMd,
-                  borderSide: BorderSide(color: colorScheme.primary),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.md,
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _filtered.length,
-                itemBuilder: (context, index) {
-                  final country = _filtered[index];
-                  final isSelected = country.countryCode ==
-                      widget.selected.countryCode;
-
-                  return ListTile(
-                    leading: Text(
-                      country.flagEmoji,
-                      style: const TextStyle(fontSize: 22),
-                    ),
-                    title: Text(country.name),
-                    subtitle: Text('+${country.phoneCode}'),
-                    trailing: isSelected
-                        ? Icon(Icons.check_rounded, color: colorScheme.primary)
-                        : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: AppRadius.radiusSm,
-                    ),
-                    onTap: () => widget.onSelected(country),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+        inputDecoration: InputDecoration(
+          hintText: 'Search country',
+          hintStyle: AppTextStyles.bodyMedium.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          filled: true,
+          fillColor: colorScheme.surfaceContainerHighest,
+          border: OutlineInputBorder(
+            borderRadius: AppRadius.radiusMd,
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: AppRadius.radiusMd,
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: AppRadius.radiusMd,
+            borderSide: BorderSide(color: colorScheme.primary),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
+          ),
         ),
+
+        // Country list item styling
+        textStyle: AppTextStyles.bodyMedium.copyWith(
+          color: colorScheme.onSurface,
+        ),
+        flagSize: 22,
       ),
+      onSelect: onSelected,
     );
   }
 }
