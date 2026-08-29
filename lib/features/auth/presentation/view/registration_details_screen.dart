@@ -353,16 +353,10 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
 
                               // Password strength indicator — only visible
                               // once the user starts typing a password.
-                              AnimatedSize(
-                                duration: const Duration(milliseconds: 200),
-                                curve: Curves.easeOut,
-                                alignment: Alignment.topCenter,
-                                child: _showPasswordStrength
-                                    ? _PasswordStrengthBar(
-                                        password: _passwordController.text,
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
+                              if (_showPasswordStrength)
+                                _PasswordStrengthBar(
+                                  password: _passwordController.text,
+                                ),
 
                               const SizedBox(height: AppSpacing.lg),
 
@@ -512,53 +506,219 @@ class _PhoneField extends StatelessWidget {
   }
 }
 
-/// Animated password strength bar with colour-coded progress.
-class _PasswordStrengthBar extends StatelessWidget {
+/// Smoothly animated password strength bar.
+///
+/// Uses a single [AnimationController] to drive both the fill width and the
+/// colour simultaneously, so transitions between strength levels are
+/// buttery-smooth instead of snapping. A shimmer sweep plays across the
+/// filled portion when the password is strong.
+class _PasswordStrengthBar extends StatefulWidget {
   const _PasswordStrengthBar({required this.password});
 
   final String password;
 
   @override
+  State<_PasswordStrengthBar> createState() => _PasswordStrengthBarState();
+}
+
+class _PasswordStrengthBarState extends State<_PasswordStrengthBar>
+    with TickerProviderStateMixin {
+  // ── Strength transition animation ──
+  late final AnimationController _progressController;
+  late Animation<double> _progressAnim;
+  late Animation<Color?> _colorAnim;
+
+  // ── Shimmer sweep (loops forever) ──
+  late final AnimationController _shimmerController;
+
+  // ── Current displayed strength ──
+  PasswordStrength _currentStrength = PasswordStrength.weak;
+  Color _currentColor = AppColors.error;
+  bool _initialised = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _progressController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+
+    // Determine the initial strength — but defer colour resolution
+    // (which needs Theme.of(context)) to didChangeDependencies.
+    _currentStrength = AuthValidator.passwordStrength(widget.password);
+    _progressAnim = AlwaysStoppedAnimation<double>(_currentStrength.value);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (!_initialised) {
+      _currentColor = _currentStrength.color(context);
+      _colorAnim = AlwaysStoppedAnimation<Color?>(_currentColor);
+      _initialised = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PasswordStrengthBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final newStrength = AuthValidator.passwordStrength(widget.password);
+    if (newStrength == _currentStrength) return;
+
+    // Animate from the old strength to the new one.
+    final oldColor = _currentColor;
+    final newColor = newStrength.color(context);
+    final oldValue = _currentStrength.value;
+    final newValue = newStrength.value;
+
+    _progressAnim = Tween<double>(begin: oldValue, end: newValue).animate(
+      CurvedAnimation(
+        parent: _progressController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    _colorAnim = ColorTween(begin: oldColor, end: newColor).animate(
+      CurvedAnimation(
+        parent: _progressController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    _currentStrength = newStrength;
+    _currentColor = newColor;
+
+    _progressController.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _progressController.dispose();
+    _shimmerController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final strength = AuthValidator.passwordStrength(password);
-    final strengthColor = strength.color(context);
+    final strengthColor = _currentStrength.color(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Progress bar + label
         Row(
           children: [
+            // Smooth animated bar
             Expanded(
               child: ClipRRect(
                 borderRadius: AppRadius.radiusFull,
-                child: LinearProgressIndicator(
-                  value: strength.value,
-                  minHeight: 6,
-                  backgroundColor:
-                      colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  valueColor: AlwaysStoppedAnimation<Color>(strengthColor),
+                child: SizedBox(
+                  height: 8,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Track
+                      Container(
+                        decoration: BoxDecoration(
+                          color:
+                              colorScheme.outlineVariant.withValues(alpha: 0.3),
+                          borderRadius: AppRadius.radiusFull,
+                        ),
+                      ),
+                      // Animated fill — width and colour tween together
+                      AnimatedBuilder(
+                        animation: _progressController,
+                        builder: (context, _) {
+                          return FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: _progressAnim.value,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              decoration: BoxDecoration(
+                                borderRadius: AppRadius.radiusFull,
+                                color: _colorAnim.value ?? strengthColor,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (_colorAnim.value ?? strengthColor)
+                                        .withValues(alpha: 0.45),
+                                    blurRadius: 10,
+                                    spreadRadius: 0,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // Shimmer sweep — only when strong
+                      if (_currentStrength == PasswordStrength.strong)
+                        AnimatedBuilder(
+                          animation: _shimmerController,
+                          builder: (context, _) {
+                            return CustomPaint(
+                              painter: _ShimmerPainter(
+                                position: _shimmerController.value,
+                                opacity: 0.6,
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: AppSpacing.md),
-            SizedBox(
-              width: 48,
-              child: Text(
-                strength.label,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: strengthColor,
-                  fontWeight: FontWeight.w600,
+            // Animated label
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, anim) {
+                return FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.3),
+                      end: Offset.zero,
+                    ).animate(anim),
+                    child: child,
+                  ),
+                );
+              },
+              child: SizedBox(
+                key: ValueKey(_currentStrength.label),
+                width: 52,
+                child: Text(
+                  _currentStrength.label,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: strengthColor,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
           ],
         ),
+
         const SizedBox(height: AppSpacing.sm),
-        Text(
-          _hintFor(strength),
-          style: AppTextStyles.caption.copyWith(
-            color: colorScheme.onSurfaceVariant,
+
+        // Animated hint text
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: Text(
+            key: ValueKey(_hintFor(_currentStrength)),
+            _hintFor(_currentStrength),
+            style: AppTextStyles.caption.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ],
@@ -575,6 +735,55 @@ class _PasswordStrengthBar extends StatelessWidget {
         return 'Great password';
     }
   }
+}
+
+/// Paints a horizontal white shimmer sweep across the bar.
+class _ShimmerPainter extends CustomPainter {
+  _ShimmerPainter({required this.position, required this.opacity});
+
+  /// Sweep position, 0 → 1 (left to right).
+  final double position;
+
+  /// Peak opacity of the shimmer.
+  final double opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final width = size.width;
+    final height = size.height;
+    final sweepWidth = width * 0.35;
+    final center = position * width;
+
+    final shader = LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: [
+        Colors.white.withValues(alpha: 0),
+        Colors.white.withValues(alpha: opacity),
+        Colors.white.withValues(alpha: 0),
+      ],
+      stops: const [0.0, 0.5, 1.0],
+    ).createShader(
+      Rect.fromCenter(
+        center: Offset(center, height / 2),
+        width: sweepWidth,
+        height: height,
+      ),
+    );
+
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(center, height / 2),
+        width: sweepWidth,
+        height: height,
+      ),
+      Paint()..shader = shader,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ShimmerPainter oldDelegate) =>
+      oldDelegate.position != position || oldDelegate.opacity != opacity;
 }
 
 /// Terms and Privacy Policy agreement checkbox.
