@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
+import '../../../users/domain/entities/app_user.dart';
+import '../state/auth_providers.dart';
 import '../widget/auth_header.dart';
 import '../widget/auth_text_field.dart';
 import '../widget/registration_step_indicator.dart';
@@ -12,24 +15,39 @@ import 'registration_done_screen.dart';
 ///
 /// Allows picking an avatar colour, optionally uploading a photo, and setting
 /// a display name that will be shown to other group members.
-class RegistrationProfileScreen extends StatefulWidget {
+///
+/// When the user presses "Finish setup", the Firebase Auth account is created
+/// and the user data is stored in the Firestore "Users" collection.
+class RegistrationProfileScreen extends ConsumerStatefulWidget {
   const RegistrationProfileScreen({
     super.key,
     required this.fullName,
     required this.email,
     required this.phoneNumber,
+    this.password,
+    this.partialUser,
   });
 
   final String fullName;
   final String email;
   final String phoneNumber;
 
+  /// Password from the Details screen. Required for email/password
+  /// registration. `null` when completing a Google sign-in profile.
+  final String? password;
+
+  /// Partial user data from Google sign-in. When non-null, this screen is
+  /// being used to complete a Google user's profile rather than a fresh
+  /// email/password registration.
+  final AppUser? partialUser;
+
   @override
-  State<RegistrationProfileScreen> createState() =>
+  ConsumerState<RegistrationProfileScreen> createState() =>
       _RegistrationProfileScreenState();
 }
 
-class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
+class _RegistrationProfileScreenState
+    extends ConsumerState<RegistrationProfileScreen>
     with TickerProviderStateMixin {
   // ── Form state ──
   final _displayNameController = TextEditingController();
@@ -96,7 +114,7 @@ class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
     return '?';
   }
 
-  void _onFinish() {
+  Future<void> _onFinish() async {
     final name = _displayNameController.text.trim();
     if (name.isEmpty) {
       setState(() {});
@@ -105,17 +123,76 @@ class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
       return;
     }
 
+    final authAction = ref.read(authActionProvider.notifier);
+    final displayName = name.isEmpty ? widget.fullName : name;
+
+    // ── Google sign-in profile completion ──
+    if (widget.partialUser != null) {
+      final success = await authAction.completeGoogleProfile(
+        partialUser: widget.partialUser!,
+        fullName: widget.fullName,
+        phoneNumber: widget.phoneNumber,
+        displayName: displayName,
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        _navigateToDone(displayName);
+      } else {
+        _showError();
+      }
+      return;
+    }
+
+    // ── Email/password registration ──
+    if (widget.password == null) {
+      _showError('Missing password. Please restart registration.');
+      return;
+    }
+
+    final success = await authAction.completeRegistration(
+      fullName: widget.fullName,
+      email: widget.email,
+      password: widget.password!,
+      phoneNumber: widget.phoneNumber,
+      displayName: displayName,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      _navigateToDone(displayName);
+    } else {
+      _showError();
+    }
+  }
+
+  void _navigateToDone(String displayName) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => RegistrationDoneScreen(
-          fullName: _displayNameController.text.trim().isEmpty
-              ? widget.fullName
-              : _displayNameController.text.trim(),
+          fullName: displayName,
           email: widget.email,
           phoneNumber: widget.phoneNumber,
         ),
       ),
     );
+  }
+
+  void _showError([String? message]) {
+    final state = ref.read(authActionProvider);
+    final errorMsg = message ??
+        (state is AuthActionError ? state.message : 'Registration failed.');
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(errorMsg),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+    ref.read(authActionProvider.notifier).reset();
   }
 
   @override
@@ -225,7 +302,11 @@ class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
                               const SizedBox(height: AppSpacing.xxxl),
 
                               // Finish setup button
-                              _FinishButton(onPressed: _onFinish),
+                              _FinishButton(
+                                onPressed: _onFinish,
+                                isLoading: ref.watch(authActionProvider)
+                                    is AuthActionLoading,
+                              ),
 
                               const SizedBox(height: AppSpacing.md),
 
@@ -385,9 +466,10 @@ class _ColorPicker extends StatelessWidget {
 
 /// Full-width "Finish setup" primary button with blurring background glow.
 class _FinishButton extends StatefulWidget {
-  const _FinishButton({required this.onPressed});
+  const _FinishButton({required this.onPressed, this.isLoading = false});
 
   final VoidCallback onPressed;
+  final bool isLoading;
 
   @override
   State<_FinishButton> createState() => _FinishButtonState();
@@ -448,7 +530,7 @@ class _FinishButtonState extends State<_FinishButton>
           );
         },
         child: FilledButton(
-          onPressed: widget.onPressed,
+          onPressed: widget.isLoading ? null : widget.onPressed,
           style: FilledButton.styleFrom(
             backgroundColor: colorScheme.primary,
             foregroundColor: colorScheme.onPrimary,
@@ -459,7 +541,16 @@ class _FinishButtonState extends State<_FinishButton>
               fontWeight: FontWeight.w600,
             ),
           ),
-          child: const Text('Finish setup'),
+          child: widget.isLoading
+              ? SizedBox(
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: colorScheme.onPrimary,
+                  ),
+                )
+              : const Text('Finish setup'),
         ),
       ),
     );

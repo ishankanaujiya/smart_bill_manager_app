@@ -211,6 +211,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
           fullName: _nameController.text.trim(),
           email: _emailController.text.trim(),
           phoneNumber: _phoneController.text.trim(),
+          password: _passwordController.text,
         ),
       ),
     );

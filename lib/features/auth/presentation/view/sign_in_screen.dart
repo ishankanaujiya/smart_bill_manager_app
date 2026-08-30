@@ -2,13 +2,18 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/validators/auth_validator.dart';
 import '../../../../core/widgets/app_field_error.dart';
+import '../../../dashboard/presentation/view/home_screen.dart';
+import '../../../users/domain/entities/app_user.dart';
+import '../state/auth_providers.dart';
 import '../widget/auth_header.dart';
 import 'registration_details_screen.dart';
+import 'registration_profile_screen.dart';
 
 /// Sign-in screen for returning users.
 ///
@@ -27,14 +32,14 @@ import 'registration_details_screen.dart';
 ///
 /// Fields are validated on submit. Invalid fields shake horizontally and the
 /// error messages slide down with a fade. The screen entrance is also staggered.
-class SignInScreen extends StatefulWidget {
+class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
   @override
-  State<SignInScreen> createState() => _SignInScreenState();
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
 }
 
-class _SignInScreenState extends State<SignInScreen>
+class _SignInScreenState extends ConsumerState<SignInScreen>
     with TickerProviderStateMixin {
   // ── Form state ──
   final _emailController = TextEditingController();
@@ -155,6 +160,80 @@ class _SignInScreenState extends State<SignInScreen>
         builder: (_) => const RegistrationDetailsScreen(),
       ),
     );
+  }
+
+  Future<void> _onSignIn() async {
+    if (!_validate()) return;
+
+    final authAction = ref.read(authActionProvider.notifier);
+    final success = await authAction.signInWithEmailAndPassword(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      _navigateToHome();
+    } else {
+      _showAuthError();
+    }
+  }
+
+  Future<void> _onGoogleSignIn() async {
+    final authAction = ref.read(authActionProvider.notifier);
+    final result = await authAction.signInWithGoogle();
+
+    if (!mounted) return;
+
+    if (!result.success) {
+      _showAuthError();
+      return;
+    }
+
+    // If the profile is incomplete, redirect to the profile completion flow.
+    if (result.partialUser != null) {
+      _navigateToProfileCompletion(result.partialUser!);
+    } else {
+      _navigateToHome();
+    }
+  }
+
+  void _navigateToHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+      (route) => false,
+    );
+  }
+
+  void _navigateToProfileCompletion(AppUser partialUser) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => RegistrationProfileScreen(
+          fullName: partialUser.fullName,
+          email: partialUser.email,
+          phoneNumber: partialUser.phoneNumber ?? '',
+          partialUser: partialUser,
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  void _showAuthError() {
+    final state = ref.read(authActionProvider);
+    final errorMsg = state is AuthActionError
+        ? state.message
+        : 'Sign-in failed. Please try again.';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(errorMsg),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+    ref.read(authActionProvider.notifier).reset();
   }
 
   @override
@@ -285,11 +364,9 @@ class _SignInScreenState extends State<SignInScreen>
 
                               // Sign in CTA
                               _SignInButton(
-                                onPressed: () {
-                                  if (_validate()) {
-                                    // TODO(auth): Handle sign in
-                                  }
-                                },
+                                onPressed: _onSignIn,
+                                isLoading: ref.watch(authActionProvider)
+                                    is AuthActionLoading,
                               ),
 
                               const SizedBox(height: AppSpacing.xl),
@@ -310,9 +387,7 @@ class _SignInScreenState extends State<SignInScreen>
                                         width: 20,
                                         height: 20,
                                       ),
-                                      onTap: () {
-                                        // TODO(auth): Google sign-in
-                                      },
+                                      onTap: _onGoogleSignIn,
                                     ),
                                   ),
                                   const SizedBox(width: AppSpacing.md),
@@ -665,9 +740,10 @@ class _BrandCheckbox extends StatelessWidget {
 /// sine-bell curve, creating a "blinking blur" effect that draws attention
 /// to the CTA without altering the button's own background colour.
 class _SignInButton extends StatefulWidget {
-  const _SignInButton({required this.onPressed});
+  const _SignInButton({required this.onPressed, this.isLoading = false});
 
   final VoidCallback onPressed;
+  final bool isLoading;
 
   @override
   State<_SignInButton> createState() => _SignInButtonState();
@@ -730,7 +806,7 @@ class _SignInButtonState extends State<_SignInButton>
           );
         },
         child: FilledButton(
-          onPressed: widget.onPressed,
+          onPressed: widget.isLoading ? null : widget.onPressed,
           style: FilledButton.styleFrom(
             backgroundColor: colorScheme.primary,
             foregroundColor: colorScheme.onPrimary,
@@ -741,7 +817,16 @@ class _SignInButtonState extends State<_SignInButton>
               fontWeight: FontWeight.w600,
             ),
           ),
-          child: const Text('Sign in'),
+          child: widget.isLoading
+              ? SizedBox(
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: colorScheme.onPrimary,
+                  ),
+                )
+              : const Text('Sign in'),
         ),
       ),
     );
