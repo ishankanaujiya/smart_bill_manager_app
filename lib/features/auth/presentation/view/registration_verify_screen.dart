@@ -18,10 +18,12 @@ class RegistrationVerifyScreen extends StatefulWidget {
   const RegistrationVerifyScreen({
     super.key,
     required this.fullName,
+    required this.email,
     required this.phoneNumber,
   });
 
   final String fullName;
+  final String email;
   final String phoneNumber;
 
   @override
@@ -177,6 +179,7 @@ class _RegistrationVerifyScreenState extends State<RegistrationVerifyScreen>
       MaterialPageRoute<void>(
         builder: (_) => RegistrationProfileScreen(
           fullName: widget.fullName,
+          email: widget.email,
           phoneNumber: widget.phoneNumber,
         ),
       ),

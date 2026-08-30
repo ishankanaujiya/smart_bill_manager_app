@@ -12,7 +12,7 @@ import '../widget/country_code_picker.dart';
 import '../widget/registration_step_indicator.dart';
 import 'registration_verify_screen.dart';
 
-/// Registration step 1 — collect full name, Nepali mobile number and password.
+/// Registration step 1 — collect full name, email, Nepali mobile number and password.
 ///
 /// The user must also agree to the Terms of Service and Privacy Policy before
 /// continuing. All fields are validated on submit; invalid fields shake and
@@ -29,16 +29,19 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
     with TickerProviderStateMixin {
   // ── Form state ──
   final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
   final _nameFocus = FocusNode();
+  final _emailFocus = FocusNode();
   final _phoneFocus = FocusNode();
   final _passwordFocus = FocusNode();
   final _confirmPasswordFocus = FocusNode();
 
   final _nameFieldKey = GlobalKey<AuthTextFieldState>();
+  final _emailFieldKey = GlobalKey<AuthTextFieldState>();
   final _phoneFieldKey = GlobalKey<AuthTextFieldState>();
   final _passwordFieldKey = GlobalKey<AuthTextFieldState>();
   final _confirmPasswordFieldKey = GlobalKey<AuthTextFieldState>();
@@ -49,6 +52,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
 
   // ── Validation error state ──
   String? _nameError;
+  String? _emailError;
   String? _phoneError;
   String? _passwordError;
   String? _confirmPasswordError;
@@ -95,10 +99,12 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
   @override
   void dispose() {
     _nameController.dispose();
+    _emailController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _nameFocus.dispose();
+    _emailFocus.dispose();
     _phoneFocus.dispose();
     _passwordFocus.dispose();
     _confirmPasswordFocus.dispose();
@@ -108,6 +114,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
 
   bool _validate() {
     final nameErr = AuthValidator.fullName(_nameController.text);
+    final emailErr = AuthValidator.email(_emailController.text);
     final phoneErr = AuthValidator.phoneNepal(_phoneController.text);
     final passErr = AuthValidator.password(_passwordController.text);
     final confirmErr = AuthValidator.confirmPassword(
@@ -118,6 +125,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
 
     setState(() {
       _nameError = nameErr;
+      _emailError = emailErr;
       _phoneError = phoneErr;
       _passwordError = passErr;
       _confirmPasswordError = confirmErr;
@@ -125,11 +133,13 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
     });
 
     if (nameErr != null) _nameFieldKey.currentState?.shake();
+    if (emailErr != null) _emailFieldKey.currentState?.shake();
     if (phoneErr != null) _phoneFieldKey.currentState?.shake();
     if (passErr != null) _passwordFieldKey.currentState?.shake();
     if (confirmErr != null) _confirmPasswordFieldKey.currentState?.shake();
 
     return nameErr == null &&
+        emailErr == null &&
         phoneErr == null &&
         passErr == null &&
         confirmErr == null &&
@@ -140,6 +150,11 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
     // Clear any existing error while the user is still typing.
     // Full validation is run when the user presses Continue.
     if (_nameError != null) setState(() => _nameError = null);
+  }
+
+  void _onEmailChanged() {
+    // Clear any existing error while typing; validation runs on Continue.
+    if (_emailError != null) setState(() => _emailError = null);
   }
 
   void _onPhoneChanged() {
@@ -194,6 +209,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
       MaterialPageRoute<void>(
         builder: (_) => RegistrationVerifyScreen(
           fullName: _nameController.text.trim(),
+          email: _emailController.text.trim(),
           phoneNumber: _phoneController.text.trim(),
         ),
       ),
@@ -262,10 +278,38 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
                                   color: colorScheme.onSurfaceVariant,
                                 ),
                                 onChanged: _onNameChanged,
-                                onSubmitted: (_) => _phoneFocus.requestFocus(),
+                                onSubmitted: (_) => _emailFocus.requestFocus(),
                                 errorText: _nameError,
                               ),
                               AppFieldError(errorText: _nameError, isDark: isDark),
+
+                              const SizedBox(height: AppSpacing.lg),
+
+                              // Email
+                              Text(
+                                'Email address',
+                                style: AppTextStyles.labelLarge.copyWith(
+                                  color: colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              AuthTextField(
+                                key: _emailFieldKey,
+                                controller: _emailController,
+                                focusNode: _emailFocus,
+                                hint: 'e.g. sujata@example.com',
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                prefixIcon: Icon(
+                                  Icons.mail_outline,
+                                  size: 22,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                onChanged: _onEmailChanged,
+                                onSubmitted: (_) => _phoneFocus.requestFocus(),
+                                errorText: _emailError,
+                              ),
+                              AppFieldError(errorText: _emailError, isDark: isDark),
 
                               const SizedBox(height: AppSpacing.lg),
 

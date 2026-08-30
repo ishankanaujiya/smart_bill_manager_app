@@ -16,10 +16,12 @@ class RegistrationProfileScreen extends StatefulWidget {
   const RegistrationProfileScreen({
     super.key,
     required this.fullName,
+    required this.email,
     required this.phoneNumber,
   });
 
   final String fullName;
+  final String email;
   final String phoneNumber;
 
   @override
@@ -109,6 +111,7 @@ class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
           fullName: _displayNameController.text.trim().isEmpty
               ? widget.fullName
               : _displayNameController.text.trim(),
+          email: widget.email,
           phoneNumber: widget.phoneNumber,
         ),
       ),

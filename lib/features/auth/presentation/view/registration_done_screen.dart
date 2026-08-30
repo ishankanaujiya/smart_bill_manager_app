@@ -14,10 +14,12 @@ class RegistrationDoneScreen extends StatefulWidget {
   const RegistrationDoneScreen({
     super.key,
     required this.fullName,
+    required this.email,
     required this.phoneNumber,
   });
 
   final String fullName;
+  final String email;
   final String phoneNumber;
 
   @override
