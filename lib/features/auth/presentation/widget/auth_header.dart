@@ -24,11 +24,13 @@ class AuthHeader extends StatefulWidget {
     required this.animation,
     required this.title,
     this.subtitle,
+    this.isRegistration = false,
   });
 
   final Animation<double> animation;
   final String title;
   final String? subtitle;
+  final bool isRegistration;
 
   @override
   State<AuthHeader> createState() => _AuthHeaderState();
@@ -183,7 +185,7 @@ class _AuthHeaderState extends State<AuthHeader>
                     widget.title,
                     style: AppTextStyles.headlineLarge.copyWith(
                       color: colorScheme.onSurface,
-                      fontSize: 30,
+                      fontSize: widget.isRegistration ? 24 : 30,
                       fontWeight: FontWeight.w800,
                       height: 1.1,
                     ),
@@ -203,9 +205,10 @@ class _AuthHeaderState extends State<AuthHeader>
                       widget.subtitle!,
                       style: AppTextStyles.bodyLarge.copyWith(
                         color: colorScheme.onSurfaceVariant,
-                        // fontSize: 13,
+                        fontSize: widget.isRegistration ? 14 : 14,
                         fontWeight: FontWeight.w500,
                       ),
+                      // textAlign: TextAlign.justify,
                     ),
                   ),
                 ],

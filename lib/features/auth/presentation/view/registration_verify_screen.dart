@@ -17,9 +17,11 @@ import 'registration_profile_screen.dart';
 class RegistrationVerifyScreen extends StatefulWidget {
   const RegistrationVerifyScreen({
     super.key,
+    required this.fullName,
     required this.phoneNumber,
   });
 
+  final String fullName;
   final String phoneNumber;
 
   @override
@@ -173,7 +175,10 @@ class _RegistrationVerifyScreenState extends State<RegistrationVerifyScreen>
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => const RegistrationProfileScreen(),
+        builder: (_) => RegistrationProfileScreen(
+          fullName: widget.fullName,
+          phoneNumber: widget.phoneNumber,
+        ),
       ),
     );
   }
@@ -193,26 +198,12 @@ class _RegistrationVerifyScreenState extends State<RegistrationVerifyScreen>
                   padding: AppSpacing.screenPadding,
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
-                      const SizedBox(height: AppSpacing.sm),
-
-                      // Back button
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back_rounded),
-                          style: IconButton.styleFrom(
-                            foregroundColor: colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-
                       const SizedBox(height: AppSpacing.md),
 
                       // Step indicator
                       const RegistrationStepIndicator(currentStep: 1),
 
-                      const SizedBox(height: AppSpacing.xxl),
+                      const SizedBox(height: AppSpacing.xxxl),
 
                       // Content
                       SlideTransition(
@@ -226,6 +217,7 @@ class _RegistrationVerifyScreenState extends State<RegistrationVerifyScreen>
                                 'Verify your number',
                                 style: AppTextStyles.headlineLarge.copyWith(
                                   color: colorScheme.onSurface,
+                                  fontSize: 28,
                                   fontWeight: FontWeight.w800,
                                   height: 1.1,
                                 ),
@@ -472,19 +464,25 @@ class _OtpBox extends StatelessWidget {
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.next,
                 textAlign: TextAlign.center,
+                textAlignVertical: TextAlignVertical.center,
+                expands: true,
+                maxLines: null,
+                minLines: null,
+                showCursor: false,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 maxLength: 1,
                 onChanged: onChanged,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   counterText: '',
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: AppSpacing.lg,
-                  ),
+                  contentPadding: EdgeInsets.zero,
+                  isDense: true,
+                  isCollapsed: true,
                 ),
                 style: AppTextStyles.headlineMedium.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w700,
+                  height: 1,
                 ),
               ),
             ),

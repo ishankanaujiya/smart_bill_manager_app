@@ -193,6 +193,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => RegistrationVerifyScreen(
+          fullName: _nameController.text.trim(),
           phoneNumber: _phoneController.text.trim(),
         ),
       ),
@@ -215,20 +216,6 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
                   padding: AppSpacing.screenPadding,
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
-                      const SizedBox(height: AppSpacing.sm),
-
-                      // Back button
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back_rounded),
-                          style: IconButton.styleFrom(
-                            foregroundColor: colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-
                       const SizedBox(height: AppSpacing.md),
 
                       // Step indicator
@@ -241,9 +228,10 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
                         animation: _entranceController,
                         title: 'Split bills, not friendships',
                         subtitle: 'Create an account to start tracking group expenses.',
+                        isRegistration: true,
                       ),
 
-                      const SizedBox(height: AppSpacing.xl),
+                      const SizedBox(height: AppSpacing.xxl),
 
                       // Form
                       SlideTransition(
@@ -829,12 +817,14 @@ class _TermsCheckbox extends StatelessWidget {
                 text: 'I agree to the ',
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: colorScheme.onSurface,
+                  fontSize: 13,
                 ),
                 children: [
                   TextSpan(
                     text: 'Terms of Service',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: colorScheme.primary,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -843,6 +833,7 @@ class _TermsCheckbox extends StatelessWidget {
                     text: 'Privacy Policy',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: colorScheme.primary,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),

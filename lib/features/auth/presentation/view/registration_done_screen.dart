@@ -11,7 +11,14 @@ import '../widget/registration_step_indicator.dart';
 /// Shows a large success checkmark, a verified phone number card, and
 /// primary/secondary actions to either create a group or go to the dashboard.
 class RegistrationDoneScreen extends StatefulWidget {
-  const RegistrationDoneScreen({super.key});
+  const RegistrationDoneScreen({
+    super.key,
+    required this.fullName,
+    required this.phoneNumber,
+  });
+
+  final String fullName;
+  final String phoneNumber;
 
   @override
   State<RegistrationDoneScreen> createState() => _RegistrationDoneScreenState();
@@ -126,10 +133,11 @@ class _RegistrationDoneScreenState extends State<RegistrationDoneScreen>
 
                               // Title
                               Text(
-                                "You're all set, Sujata",
+                                "You're all set, ${widget.fullName}",
                                 textAlign: TextAlign.center,
                                 style: AppTextStyles.headlineLarge.copyWith(
                                   color: colorScheme.onSurface,
+                                  fontSize: 29,
                                   fontWeight: FontWeight.w800,
                                   height: 1.1,
                                 ),
@@ -150,7 +158,7 @@ class _RegistrationDoneScreenState extends State<RegistrationDoneScreen>
 
                               // Verified phone card
                               _VerifiedPhoneCard(
-                                phoneNumber: '+977 98XXXXXXXX',
+                                phoneNumber: widget.phoneNumber,
                               ),
 
                               const SizedBox(height: AppSpacing.xxxl),

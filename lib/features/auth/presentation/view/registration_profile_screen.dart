@@ -13,7 +13,14 @@ import 'registration_done_screen.dart';
 /// Allows picking an avatar colour, optionally uploading a photo, and setting
 /// a display name that will be shown to other group members.
 class RegistrationProfileScreen extends StatefulWidget {
-  const RegistrationProfileScreen({super.key});
+  const RegistrationProfileScreen({
+    super.key,
+    required this.fullName,
+    required this.phoneNumber,
+  });
+
+  final String fullName;
+  final String phoneNumber;
 
   @override
   State<RegistrationProfileScreen> createState() =>
@@ -57,7 +64,7 @@ class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
       ),
     );
 
-    _displayNameController.text = 'Sujata Rai';
+    _displayNameController.text = widget.fullName;
 
     _startEntrance();
   }
@@ -98,7 +105,12 @@ class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => const RegistrationDoneScreen(),
+        builder: (_) => RegistrationDoneScreen(
+          fullName: _displayNameController.text.trim().isEmpty
+              ? widget.fullName
+              : _displayNameController.text.trim(),
+          phoneNumber: widget.phoneNumber,
+        ),
       ),
     );
   }
@@ -119,20 +131,6 @@ class _RegistrationProfileScreenState extends State<RegistrationProfileScreen>
                   padding: AppSpacing.screenPadding,
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
-                      const SizedBox(height: AppSpacing.sm),
-
-                      // Back button
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back_rounded),
-                          style: IconButton.styleFrom(
-                            foregroundColor: colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-
                       const SizedBox(height: AppSpacing.md),
 
                       // Step indicator
