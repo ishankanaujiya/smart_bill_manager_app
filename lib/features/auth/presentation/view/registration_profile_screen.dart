@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
+import '../../../../core/presentation/app_shell.dart';
 import '../../../users/domain/entities/app_user.dart';
 import '../state/auth_providers.dart';
 import '../widget/auth_header.dart';
@@ -169,6 +170,14 @@ class _RegistrationProfileScreenState
   }
 
   void _navigateToDone(String displayName) {
+    if (widget.partialUser != null) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const AppShell()),
+        (route) => false,
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => RegistrationDoneScreen(
@@ -229,7 +238,8 @@ class _RegistrationProfileScreenState
                               AuthHeader(
                                 animation: _entranceController,
                                 title: 'Set up your profile',
-                                subtitle: "This is how you'll appear inside your groups.",
+                                subtitle:
+                                    "This is how you'll appear inside your groups.",
                               ),
 
                               const SizedBox(height: AppSpacing.xxxl),
@@ -248,7 +258,8 @@ class _RegistrationProfileScreenState
                               _ColorPicker(
                                 colors: _colors,
                                 selectedIndex: _selectedColorIndex,
-                                onSelect: (i) => setState(() => _selectedColorIndex = i),
+                                onSelect: (i) =>
+                                    setState(() => _selectedColorIndex = i),
                               ),
 
                               const SizedBox(height: AppSpacing.lg),

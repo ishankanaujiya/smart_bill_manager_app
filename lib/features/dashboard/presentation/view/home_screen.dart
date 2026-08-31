@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../../../app/theme/design_system.dart';
 import '../widget/balance_summary_card.dart';
 import '../widget/group_preview_card.dart';
 import '../widget/quick_action_button.dart';
 import '../widget/recent_activity_tile.dart';
 
+/// Home tab for the app shell.
+///
+/// Shows the user's balance summary, quick actions, groups and recent activity.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -13,32 +17,29 @@ class HomeScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Scaffold(
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            _buildAppBar(theme, colorScheme),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverList.list(
-                children: [
-                  const SizedBox(height: 8),
-                  const BalanceSummaryCard(),
-                  const SizedBox(height: 28),
-                  _buildQuickActions(colorScheme),
-                  const SizedBox(height: 28),
-                  _buildMyGroupsSection(theme, colorScheme),
-                  const SizedBox(height: 28),
-                  _buildRecentActivitySection(theme, colorScheme),
-                  const SizedBox(height: 24),
-                ],
-              ),
+    return SafeArea(
+      child: CustomScrollView(
+        key: const PageStorageKey('home_screen'),
+        slivers: [
+          _buildAppBar(theme, colorScheme),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            sliver: SliverList.list(
+              children: [
+                const SizedBox(height: AppSpacing.sm),
+                const BalanceSummaryCard(),
+                const SizedBox(height: AppSpacing.xxxl),
+                _buildQuickActions(colorScheme),
+                const SizedBox(height: AppSpacing.xxxl),
+                _buildMyGroupsSection(theme, colorScheme),
+                const SizedBox(height: AppSpacing.xxxl),
+                _buildRecentActivitySection(theme, colorScheme),
+                const SizedBox(height: 96),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    
-      bottomNavigationBar: _buildBottomNavBar(colorScheme),
     );
   }
 
@@ -246,35 +247,6 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBottomNavBar(ColorScheme colorScheme) {
-    return NavigationBar(
-      selectedIndex: 0,
-      onDestinationSelected: (_) {},
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home_rounded),
-          label: 'Home',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.group_outlined),
-          selectedIcon: Icon(Icons.group_rounded),
-          label: 'Groups',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.receipt_long_outlined),
-          selectedIcon: Icon(Icons.receipt_long_rounded),
-          label: 'Expenses',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.account_balance_wallet_outlined),
-          selectedIcon: Icon(Icons.account_balance_wallet_rounded),
-          label: 'Settle',
         ),
       ],
     );

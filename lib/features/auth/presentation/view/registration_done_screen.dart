@@ -3,13 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/design_system.dart';
-import '../../../dashboard/presentation/view/home_screen.dart';
 import '../widget/registration_step_indicator.dart';
+import 'sign_in_screen.dart';
 
 /// Registration step 4 — success and final call-to-action.
 ///
 /// Shows a large success checkmark, a verified phone number card, and
-/// primary/secondary actions to either create a group or go to the dashboard.
+/// primary/secondary actions to navigate to the sign-in screen so the user
+/// can sign in with their newly created credentials.
 class RegistrationDoneScreen extends StatefulWidget {
   const RegistrationDoneScreen({
     super.key,
@@ -149,7 +150,7 @@ class _RegistrationDoneScreenState extends State<RegistrationDoneScreen>
 
                               // Subtitle
                               Text(
-                                'Your account is verified and ready. Create a group to start splitting expenses with the people you spend with.',
+                                'Your account is verified and ready. Sign in with your credentials to start splitting expenses with the people you spend with.',
                                 textAlign: TextAlign.center,
                                 style: AppTextStyles.bodyLarge.copyWith(
                                   color: colorScheme.onSurfaceVariant,
@@ -165,28 +166,25 @@ class _RegistrationDoneScreenState extends State<RegistrationDoneScreen>
 
                               const SizedBox(height: AppSpacing.xxxl),
 
-                              // Create group button
+                              // Sign in button
                               _PrimaryActionButton(
-                                label: 'Create your first group',
-                                onPressed: () {
-                                  // TODO(group): Navigate to create group
-                                  _goToDashboard();
-                                },
+                                label: 'Continue to sign in',
+                                onPressed: _goToSignIn,
                               ),
 
                               const SizedBox(height: AppSpacing.lg),
 
-                              // Dashboard link
-                              GestureDetector(
-                                onTap: _goToDashboard,
-                                child: Text(
-                                  'Take me to dashboard',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
+                              // Sign in link
+                              // GestureDetector(
+                              //   onTap: _goToSignIn,
+                              //   child: Text(
+                              //     'Take me to sign in',
+                              //     style: AppTextStyles.bodyMedium.copyWith(
+                              //       color: colorScheme.onSurfaceVariant,
+                              //       fontWeight: FontWeight.w600,
+                              //     ),
+                              //   ),
+                              // ),
 
                               const SizedBox(height: AppSpacing.xl),
                             ],
@@ -204,9 +202,9 @@ class _RegistrationDoneScreenState extends State<RegistrationDoneScreen>
     );
   }
 
-  void _goToDashboard() {
+  void _goToSignIn() {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
       (route) => false,
     );
   }

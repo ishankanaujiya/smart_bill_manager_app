@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../app/theme/design_system.dart';
+import '../../../../core/presentation/app_shell.dart';
 import '../../../../core/validators/auth_validator.dart';
 import '../../../../core/widgets/app_field_error.dart';
-import '../../../dashboard/presentation/view/home_screen.dart';
 import '../../../users/domain/entities/app_user.dart';
 import '../state/auth_providers.dart';
 import '../widget/auth_header.dart';
@@ -201,7 +201,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
 
   void _navigateToHome() {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+      MaterialPageRoute<void>(builder: (_) => const AppShell()),
       (route) => false,
     );
   }
@@ -424,12 +424,14 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                                     children: [
                                       TextSpan(
                                         text: 'Register',
-                                        style: AppTextStyles.bodyMedium.copyWith(
+                                        style:
+                                            AppTextStyles.bodyMedium.copyWith(
                                           color: colorScheme.primary,
                                           fontWeight: FontWeight.w700,
                                         ),
                                         recognizer: TapGestureRecognizer()
-                                          ..onTap = () => _openRegistration(context),
+                                          ..onTap =
+                                              () => _openRegistration(context),
                                       ),
                                     ],
                                   ),
@@ -549,7 +551,9 @@ class _PasswordField extends StatelessWidget {
           onSubmitted: (_) => FocusScope.of(context).unfocus(),
           suffix: IconButton(
             icon: Icon(
-              obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              obscure
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
               size: 20,
               color: colorScheme.onSurfaceVariant,
             ),
@@ -634,9 +638,8 @@ class _AuthTextFieldState extends State<_AuthTextField>
       builder: (context, child) {
         final t = _shakeController.value;
         // Damped sine wave shake — same as the original AuthTextField.
-        final offset = 8 *
-            (1 - t) *
-            (t * 4 - t * t * 4 - t * t * t).clamp(-1.0, 1.0);
+        final offset =
+            8 * (1 - t) * (t * 4 - t * t * 4 - t * t * t).clamp(-1.0, 1.0);
 
         return Transform.translate(
           offset: Offset(offset, 0),
@@ -659,7 +662,9 @@ class _AuthTextFieldState extends State<_AuthTextField>
                 border: Border.all(
                   color: hasError
                       ? colorScheme.error
-                      : (focused ? colorScheme.primary : colorScheme.outlineVariant),
+                      : (focused
+                          ? colorScheme.primary
+                          : colorScheme.outlineVariant),
                   width: (focused || hasError) ? 2 : 1,
                 ),
                 borderRadius: AppRadius.radiusMd,
@@ -841,7 +846,8 @@ class _OrDivider extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(child: Divider(color: colorScheme.outlineVariant, thickness: 1)),
+        Expanded(
+            child: Divider(color: colorScheme.outlineVariant, thickness: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           child: Text(
@@ -852,7 +858,8 @@ class _OrDivider extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(child: Divider(color: colorScheme.outlineVariant, thickness: 1)),
+        Expanded(
+            child: Divider(color: colorScheme.outlineVariant, thickness: 1)),
       ],
     );
   }
