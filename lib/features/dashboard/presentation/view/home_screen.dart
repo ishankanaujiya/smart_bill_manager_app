@@ -510,41 +510,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         label: 'Money Received',
         amount: 'Rs. 18,750',
         caption: 'from 5 people',
-        icon: Icons.south_west_rounded,
-        iconBg: AppColors.success,
+        icon: Icons.arrow_downward,
+        iconColor: AppColors.chartTeal,
       ),
       _QuickStat(
         label: 'Money to Pay',
         amount: 'Rs. 6,300',
         caption: 'to 3 people',
-        icon: Icons.north_east_rounded,
-        iconBg: AppColors.warning,
+        icon: Icons.arrow_upward,
+        iconColor: AppColors.success,
       ),
       _QuickStat(
         label: 'Settled This Month',
         amount: 'Rs. 9,650',
         caption: 'across 12 payments',
-        icon: Icons.check_circle_outline_rounded,
-        iconBg: AppColors.chartBlue,
+        icon: Icons.check_circle_rounded,
+        iconColor: AppColors.chartBlue,
       ),
     ];
 
-    return Row(
-      children: [
-        for (var i = 0; i < stats.length; i++) ...[
-          if (i > 0) const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: _staggeredEntrance(
-              _QuickStatCard(
-                stat: stats[i],
-                colorScheme: colorScheme,
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < stats.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: _staggeredEntrance(
+                _QuickStatCard(
+                  stat: stats[i],
+                  colorScheme: colorScheme,
+                ),
+                start: 0.2 + (i * 0.06),
+                end: 0.42 + (i * 0.06),
               ),
-              start: 0.2 + (i * 0.06),
-              end: 0.42 + (i * 0.06),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -797,14 +800,14 @@ class _QuickStat {
     required this.amount,
     required this.caption,
     required this.icon,
-    required this.iconBg,
+    required this.iconColor,
   });
 
   final String label;
   final String amount;
   final String caption;
   final IconData icon;
-  final Color iconBg;
+  final Color iconColor;
 }
 
 class _ActivePayment {
@@ -873,36 +876,43 @@ class _QuickStatCard extends StatelessWidget {
         color: colorScheme.surface,
         borderRadius: AppRadius.radiusXl,
         boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
-        // Subtle top accent bar in the stat's icon colour.
+        // Subtle primary top accent — matches the auth step indicator.
         border: Border(
           top: BorderSide(
-            color: stat.iconBg.withValues(alpha: 0.4),
+            color: stat.iconColor.withValues(alpha: 0.4),
             width: 2,
           ),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Filled icon circle – solid colour with white icon for contrast.
+          // Icon circle — surface fill with a stat-specific tinted border and
+          // icon, plus a subtle glow in that same colour.
           Container(
-            width: 36,
-            height: 36,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: stat.iconBg,
+              color: colorScheme.surface,
               shape: BoxShape.circle,
+              border: Border.all(
+                color: stat.iconColor,
+                width: 2,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: stat.iconBg.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+                  color: stat.iconColor.withValues(alpha: 0.25),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                  offset: const Offset(0, 0),
                 ),
               ],
             ),
             child: Icon(
               stat.icon,
-              color: AppColors.white,
+              color: stat.iconColor,
               size: 18,
             ),
           ),
