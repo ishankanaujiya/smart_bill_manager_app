@@ -199,8 +199,8 @@ class _BottomNavBar extends StatelessWidget {
                     _NavItem(
                       index: 3,
                       currentIndex: currentIndex,
-                      icon: Icons.receipt_long_outlined,
-                      activeIcon: Icons.receipt_long_rounded,
+                      icon: Icons.trending_up_outlined,
+                      activeIcon: Icons.trending_up_rounded,
                       hasNotification: true,
                       onTap: () => onTap(3),
                       colorScheme: colorScheme,
