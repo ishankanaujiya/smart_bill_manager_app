@@ -42,6 +42,9 @@ dependencies:
   # UI
   fl_chart: ^0.70.2
   cupertino_icons: ^1.0.8
+  flutter_svg: ^2.3.0
+  country_picker: ^2.0.28
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
