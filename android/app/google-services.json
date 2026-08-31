@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "489568535248",
+    "project_id": "smart-bill-manager-app",
+    "storage_bucket": "smart-bill-manager-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:489568535248:android:994747c7bb761319ce54d5",
+        "android_client_info": {
+          "package_name": "com.nepasolvetech.smartbillmanager"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "489568535248-4h9urns72o1aq50lc4itvdikh19m4i8t.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCX2gHAXHUzD5ubY-T69w7WLBF8BnIfy1k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "489568535248-4h9urns72o1aq50lc4itvdikh19m4i8t.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
