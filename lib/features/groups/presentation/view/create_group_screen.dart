@@ -422,37 +422,52 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  _DashedCircle(
-                    color: colorScheme.primary.withValues(alpha: 0.6),
-                    dash: 4.0,
-                    gap: 3.0,
-                    strokeWidth: 1.0,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: SizedBox(
-                        width: 96,
-                        height: 96,
-                        child: ClipOval(
-                          child: hasPhoto
-                              ? Image.file(
-                                  io.File(_groupPhotoPath!),
-                                  width: 96,
-                                  height: 96,
-                                  fit: BoxFit.cover,
-                                )
-                              : Container(
-                                  width: 96,
-                                  height: 96,
-                                  decoration: BoxDecoration(
-                                    color: pickerBg,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.group_outlined,
-                                    color: colorScheme.primary,
-                                    size: 36,
-                                  ),
+                  // Static inner content (icon / image) — does NOT rotate.
+                  Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: SizedBox(
+                      width: 96,
+                      height: 96,
+                      child: ClipOval(
+                        child: hasPhoto
+                            ? Image.file(
+                                io.File(_groupPhotoPath!),
+                                width: 96,
+                                height: 96,
+                                fit: BoxFit.cover,
+                              )
+                            : Container(
+                                width: 96,
+                                height: 96,
+                                decoration: BoxDecoration(
+                                  color: pickerBg,
+                                  shape: BoxShape.circle,
                                 ),
+                                child: Icon(
+                                  Icons.group_outlined,
+                                  color: colorScheme.primary,
+                                  size: 36,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                  // Rotating dashed border — overlaid on top of the
+                  // static content so only the dashes spin, not the icon.
+                  Positioned.fill(
+                    child: _SlowRotation(
+                      duration: const Duration(seconds: 25),
+                      child: IgnorePointer(
+                        child: _DashedCircle(
+                          color:
+                              colorScheme.primary.withValues(alpha: 0.6),
+                          dash: 4.0,
+                          gap: 3.0,
+                          strokeWidth: 1.0,
+                          child: const SizedBox(
+                            width: 110,
+                            height: 110,
+                          ),
                         ),
                       ),
                     ),
@@ -514,12 +529,29 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
                     Positioned(
                       top: 18,
                       right: -28,
-                      child: _buildThumbnail(colorScheme, isDark, size: 32),
+                      child: _Floating(
+                        distance: 5,
+                        duration: const Duration(milliseconds: 3000),
+                        child: _buildThumbnail(
+                          colorScheme,
+                          isDark,
+                          size: 32,
+                        ),
+                      ),
                     ),
                     Positioned(
                       bottom: 12,
                       right: -22,
-                      child: _buildThumbnail(colorScheme, isDark, size: 24),
+                      child: _Floating(
+                        distance: 4,
+                        duration: const Duration(milliseconds: 2400),
+                        delay: const Duration(milliseconds: 400),
+                        child: _buildThumbnail(
+                          colorScheme,
+                          isDark,
+                          size: 24,
+                        ),
+                      ),
                     ),
                   ],
                 ],
@@ -676,7 +708,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
             color: colorScheme.onSurface,
           ),
         ),
-        
+        const SizedBox(width: AppSpacing.sm),
+        _AnimatedCounter(
+          count: _members.length,
+          colorScheme: colorScheme,
+        ),
       ],
     );
   }
@@ -756,83 +792,141 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
   }
 
   Widget _buildSearchLoading(ColorScheme colorScheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: colorScheme.primary,
+    return Column(
+      children: [
+        for (var i = 0; i < 3; i++)
+          _ItemEntrance(
+            delay: Duration(milliseconds: i * 100),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Container(
+                padding: AppSpacing.cardPaddingSymmetric,
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: AppRadius.radiusLg,
+                  border: Border.all(
+                    color: colorScheme.outlineVariant
+                        .withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // Shimmer avatar.
+                    _ShimmerBar(
+                      colorScheme: colorScheme,
+                      width: 44,
+                      height: 44,
+                      borderRadius: 22,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    // Shimmer name + email.
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _ShimmerBar(
+                            colorScheme: colorScheme,
+                            width: 140,
+                            height: 12,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          _ShimmerBar(
+                            colorScheme: colorScheme,
+                            width: 100,
+                            height: 10,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    // Shimmer add button.
+                    _ShimmerBar(
+                      colorScheme: colorScheme,
+                      width: 50,
+                      height: 24,
+                      borderRadius: 8,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: AppSpacing.md),
-          Text(
-            'Searching users...',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
   Widget _buildSearchEmpty(ColorScheme colorScheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-      child: Column(
-        children: [
-          Icon(
-            Icons.person_search_outlined,
-            size: 36,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'No users found',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
+    return _ItemEntrance(
+      slide: 16,
+      scaleFrom: 0.95,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+        child: Column(
+          children: [
+            _BounceIn(
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.person_search_outlined,
+                  size: 32,
+                  color: colorScheme.primary.withValues(alpha: 0.7),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Try a different phone number or email',
-            style: AppTextStyles.caption.copyWith(
-              color: colorScheme.onSurfaceVariant,
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'No users found',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 2),
+            Text(
+              'Try a different phone number or email',
+              style: AppTextStyles.caption.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSearchError(String message, ColorScheme colorScheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.error_outline,
-            size: 18,
-            color: colorScheme.error,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Flexible(
-            child: Text(
-              message,
-              style: AppTextStyles.bodySmall.copyWith(
+    return _ItemEntrance(
+      slide: 16,
+      scaleFrom: 0.95,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _BounceIn(
+              child: Icon(
+                Icons.error_outline,
+                size: 20,
                 color: colorScheme.error,
               ),
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
-        ],
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: Text(
+                message,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: colorScheme.error,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -845,13 +939,18 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     return Column(
       children: [
         for (var i = 0; i < users.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: _buildSearchResultTile(
-              users[i],
-              colorScheme,
-              isDark,
-              index: i,
+          _ItemEntrance(
+            delay: Duration(milliseconds: i * 80),
+            slide: 28,
+            scaleFrom: 0.94,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _buildSearchResultTile(
+                users[i],
+                colorScheme,
+                isDark,
+                index: i,
+              ),
             ),
           ),
       ],
@@ -953,32 +1052,34 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
             const SizedBox(width: AppSpacing.md),
             // Add / added status.
             if (isAdded)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.xs,
-                ),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: AppRadius.radiusSm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.check,
-                      size: 14,
-                      color: colorScheme.primary,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      'Added',
-                      style: AppTextStyles.labelSmall.copyWith(
+              _PopIn(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: AppRadius.radiusSm,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.check,
+                        size: 14,
                         color: colorScheme.primary,
-                        fontWeight: FontWeight.w600,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        'Added',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else
@@ -1024,13 +1125,12 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     return Column(
       children: [
         for (var i = 0; i < members.length; i++)
-          StaggeredEntrance(
-            animation: _entrance,
-            interval: Interval(
-              0.52 + (i * 0.05),
-              0.66 + (i * 0.05),
-              curve: Curves.easeOutCubic,
-            ),
+          _ItemEntrance(
+            key: ValueKey('member-${members[i].id}'),
+            delay: Duration(milliseconds: i * 60),
+            slide: 30,
+            scaleFrom: 0.90,
+            duration: const Duration(milliseconds: 500),
             child: Padding(
               padding: const EdgeInsets.only(
                 top: AppSpacing.sm,
@@ -1301,9 +1401,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.person_add_alt_1,
+                  _PulseIcon(
+                    animation: _ambient,
                     color: colorScheme.primary,
+                    icon: Icons.person_add_alt_1,
                     size: 20,
                   ),
                   const SizedBox(width: AppSpacing.sm),
@@ -1795,4 +1896,506 @@ class _DashedRRectPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DashedRRectPainter old) =>
       old.color != color || old.radius != radius;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Professional animation widgets
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A one-shot entrance animation that plays whenever this widget is newly
+/// inserted into the tree. Combines fade + vertical slide + scale for a
+/// polished, material-style list-item entrance.
+///
+/// Pass [delay] to stagger multiple items in a list.
+class _ItemEntrance extends StatefulWidget {
+  const _ItemEntrance({
+    super.key,
+    required this.child,
+    this.delay = Duration.zero,
+    this.slide = 32.0,
+    this.scaleFrom = 0.92,
+    this.duration = const Duration(milliseconds: 450),
+  });
+
+  final Widget child;
+  final Duration delay;
+  final double slide;
+  final double scaleFrom;
+  final Duration duration;
+
+  @override
+  State<_ItemEntrance> createState() => _ItemEntranceState();
+}
+
+class _ItemEntranceState extends State<_ItemEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    );
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    if (widget.delay == Duration.zero) {
+      _controller.forward();
+    } else {
+      Future.delayed(widget.delay, () {
+        if (mounted) _controller.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        final t = _animation.value;
+        return Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, widget.slide * (1 - t)),
+            child: Transform.scale(
+              scale: widget.scaleFrom + (1.0 - widget.scaleFrom) * t,
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// A shimmer bar that sweeps left-to-right indefinitely — used for
+/// skeleton-style loading placeholders.
+class _ShimmerBar extends StatefulWidget {
+  const _ShimmerBar({
+    required this.colorScheme,
+    this.width = double.infinity,
+    this.height = 12,
+    this.borderRadius,
+  });
+
+  final ColorScheme colorScheme;
+  final double width;
+  final double height;
+  final double? borderRadius;
+
+  @override
+  State<_ShimmerBar> createState() => _ShimmerBarState();
+}
+
+class _ShimmerBarState extends State<_ShimmerBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return ShaderMask(
+          shaderCallback: (bounds) {
+            final t = _controller.value;
+            return LinearGradient(
+              begin: Alignment(t * 2 - 1, 0),
+              end: Alignment(t * 2 + 0.5, 0),
+              colors: [
+                widget.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.3),
+                widget.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.6),
+                widget.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.3),
+              ],
+            ).createShader(bounds);
+          },
+          child: child,
+        );
+      },
+      child: Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: widget.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(
+            widget.borderRadius ?? widget.height / 2,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Wraps [child] with a slow, continuous rotation driven by its own
+/// controller. Used for the dashed circle on the photo picker.
+class _SlowRotation extends StatefulWidget {
+  const _SlowRotation({
+    required this.child,
+    this.duration = const Duration(seconds: 20),
+  });
+
+  final Widget child;
+  final Duration duration;
+
+  @override
+  State<_SlowRotation> createState() => _SlowRotationState();
+}
+
+class _SlowRotationState extends State<_SlowRotation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform.rotate(
+          angle: _controller.value * 2 * math.pi,
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// A gentle up-and-down floating animation for decorative elements.
+class _Floating extends StatefulWidget {
+  const _Floating({
+    required this.child,
+    this.distance = 4.0,
+    this.duration = const Duration(milliseconds: 2800),
+    this.delay = Duration.zero,
+  });
+
+  final Widget child;
+  final double distance;
+  final Duration duration;
+  final Duration delay;
+
+  @override
+  State<_Floating> createState() => _FloatingState();
+}
+
+class _FloatingState extends State<_Floating>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    );
+    Future.delayed(widget.delay, () {
+      if (mounted) _controller.repeat(reverse: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = Curves.easeInOutSine.transform(_controller.value);
+        return Transform.translate(
+          offset: Offset(0, -widget.distance * t),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// Smoothly animates an integer count from zero to [count] whenever
+/// [count] changes. Used for the member count badge.
+class _AnimatedCounter extends StatefulWidget {
+  const _AnimatedCounter({
+    required this.count,
+    required this.colorScheme,
+  });
+
+  final int count;
+  final ColorScheme colorScheme;
+
+  @override
+  State<_AnimatedCounter> createState() => _AnimatedCounterState();
+}
+
+class _AnimatedCounterState extends State<_AnimatedCounter>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<int> _animation;
+  int _oldCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _animation = IntTween(begin: 0, end: widget.count).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedCounter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.count != widget.count) {
+      _animation = IntTween(begin: _oldCount, end: widget.count).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+      );
+      _oldCount = widget.count;
+      _controller
+        ..reset()
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm + 2,
+            vertical: 2,
+          ),
+          decoration: BoxDecoration(
+            color: widget.colorScheme.primaryContainer,
+            borderRadius: AppRadius.radiusFull,
+          ),
+          child: Text(
+            '${_animation.value}',
+            style: AppTextStyles.labelSmall.copyWith(
+              color: widget.colorScheme.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A bouncy entrance for icons — used in empty/error states.
+class _BounceIn extends StatefulWidget {
+  const _BounceIn({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_BounceIn> createState() => _BounceInState();
+}
+
+class _BounceInState extends State<_BounceIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.15)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 60,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.15, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 40,
+      ),
+    ]).animate(_controller);
+    _opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.4, curve: Curves.easeIn),
+      ),
+    );
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _opacity.value,
+          child: Transform.scale(
+            scale: _scale.value,
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// A scale-and-fade transition for the "Added" badge — pops in when a
+/// member is added.
+class _PopIn extends StatefulWidget {
+  const _PopIn({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PopIn> createState() => _PopInState();
+}
+
+class _PopInState extends State<_PopIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.2)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.2, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 50,
+      ),
+    ]).animate(_controller);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _scale,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scale.value,
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// An icon that gently pulses (scales up and down) using a shared
+/// ambient animation controller — no extra controller needed.
+class _PulseIcon extends StatelessWidget {
+  const _PulseIcon({
+    required this.animation,
+    required this.color,
+    required this.icon,
+    required this.size,
+  });
+
+  final Animation<double> animation;
+  final Color color;
+  final IconData icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final pulse = (1 - math.cos(math.pi * 2 * animation.value)) * 0.5;
+        return Transform.scale(
+          scale: 1.0 + 0.12 * pulse,
+          child: child,
+        );
+      },
+      child: Icon(icon, color: color, size: size),
+    );
+  }
 }
