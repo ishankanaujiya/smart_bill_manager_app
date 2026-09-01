@@ -34,7 +34,7 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
   static const _pages = <Widget>[
     HomeScreen(),
     GroupsScreen(),
-    CreateGroupScreen(),
+    SizedBox.shrink(),
     ActivityScreen(),
     ProfileScreen(),
   ];
@@ -76,8 +76,18 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
   }
 
   void _onTabSelected(int index) {
+    if (index == 2) {
+      _openCreateGroup();
+      return;
+    }
     if (_currentIndex == index) return;
     setState(() => _currentIndex = index);
+  }
+
+  void _openCreateGroup() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const CreateGroupScreen()),
+    );
   }
 
   @override
@@ -94,6 +104,7 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
       bottomNavigationBar: _BottomNavBar(
         currentIndex: _currentIndex,
         onTap: _onTabSelected,
+        onCreateGroup: _openCreateGroup,
         isDark: isDark,
         colorScheme: colorScheme,
         slideAnimation: _barSlide,
@@ -108,6 +119,7 @@ class _BottomNavBar extends StatelessWidget {
   const _BottomNavBar({
     required this.currentIndex,
     required this.onTap,
+    required this.onCreateGroup,
     required this.isDark,
     required this.colorScheme,
     required this.slideAnimation,
@@ -117,6 +129,7 @@ class _BottomNavBar extends StatelessWidget {
 
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final VoidCallback onCreateGroup;
   final bool isDark;
   final ColorScheme colorScheme;
   final Animation<double> slideAnimation;
@@ -192,7 +205,7 @@ class _BottomNavBar extends StatelessWidget {
                     ),
                     _AddNavItem(
                       isSelected: currentIndex == 2,
-                      onTap: () => onTap(2),
+                      onTap: onCreateGroup,
                       colorScheme: colorScheme,
                       pulseAnimation: addPulseAnimation,
                     ),
@@ -392,15 +405,8 @@ class _AddNavItemState extends State<_AddNavItem>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
+              color: primary,
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  primary,
-                  AppColors.teal2,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
               boxShadow: [
                 BoxShadow(
                   color: primary.withValues(alpha: 0.25 + 0.25 * pulse),

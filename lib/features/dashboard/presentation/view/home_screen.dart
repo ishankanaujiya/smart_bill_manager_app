@@ -166,11 +166,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   /// Financial summary card — the hero of the home screen.
   ///
-  /// Uses the primary colour as the dominant background in **both** light and
-  /// dark mode (`primary → tertiary` diagonal gradient).  All content is
-  /// rendered in `AppColors.white` so it remains crisp and readable regardless
-  /// of the theme — `colorScheme.onPrimary` in dark mode is dark navy and would
-  /// vanish on the bright teal.
+  /// Uses a solid `colorScheme.primary` background in **both** light and
+  /// dark mode.  All content is rendered in `AppColors.white` so it remains
+  /// crisp and readable regardless of the theme — `colorScheme.onPrimary` in
+  /// dark mode is dark navy and would vanish on the bright teal.
   ///
   /// Layered animations:
   /// 1.  Entrance — card scales + fades in.
@@ -406,32 +405,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   /// Card background — static, no rotation.
   ///
-  /// **Light mode** uses the full-saturation `primary → tertiary` gradient for
-  /// a vibrant, energetic feel.
-  ///
-  /// **Dark mode** uses a toned-down version of the same gradient — the
-  /// primary and tertiary colours are blended with the dark surface so the
-  /// card retains its teal identity without glowing too brightly against the
-  /// surrounding dark theme.  All content stays white for crisp contrast.
+  /// Uses a solid `colorScheme.primary` fill in both light and dark mode so
+  /// the card stays consistent with the app's unified primary colour.
+  /// All content stays white for crisp contrast.
   Widget _buildCardBackground(ColorScheme colorScheme) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Dark mode: blend 45% of the primary/tertiary into the dark surface.
-    // This darkens the gradient while preserving the teal-to-green hue shift.
+    // Dark mode: blend 45% of the primary into the dark surface so the
+    // card retains its teal identity without glowing too brightly.
     if (isDark) {
-      Color blend(Color c) => Color.alphaBlend(
-            c.withValues(alpha: 0.45),
-            colorScheme.surface,
-          );
       return Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              blend(colorScheme.primary),
-              blend(colorScheme.tertiary),
-            ],
+          color: Color.alphaBlend(
+            colorScheme.primary.withValues(alpha: 0.45),
+            colorScheme.surface,
           ),
         ),
       );
@@ -439,14 +426,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primary,
-            colorScheme.tertiary,
-          ],
-        ),
+        color: colorScheme.primary,
       ),
     );
   }
