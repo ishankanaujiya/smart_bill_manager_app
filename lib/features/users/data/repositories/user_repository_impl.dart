@@ -28,6 +28,58 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
+  Future<List<AppUser>> searchUsers(String query,
+      {String? excludeUid}) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+
+    // Firestore doesn't support OR queries across different fields in a
+    // single where clause, so we fire both queries in parallel and merge.
+    // Each query is wrapped in a try/catch so that if one fails (e.g. due
+    // to a missing field on some documents), the other can still return
+    // results.
+    QuerySnapshot<Map<String, dynamic>>? emailSnapshot;
+    QuerySnapshot<Map<String, dynamic>>? phoneSnapshot;
+
+    try {
+      emailSnapshot = await _collection
+          .where('email', isGreaterThanOrEqualTo: trimmed)
+          .where('email', isLessThanOrEqualTo: '$trimmed\uf8ff')
+          .limit(10)
+          .get();
+    } catch (_) {
+      // Email query failed — continue with phone results only.
+    }
+
+    try {
+      phoneSnapshot = await _collection
+          .where('phone_number', isGreaterThanOrEqualTo: trimmed)
+          .where('phone_number', isLessThanOrEqualTo: '$trimmed\uf8ff')
+          .limit(10)
+          .get();
+    } catch (_) {
+      // Phone query failed — continue with email results only.
+    }
+
+    // Merge, deduplicate by document ID, and exclude the current user.
+    final seen = <String>{};
+    final users = <AppUser>[];
+
+    for (final snapshot in [emailSnapshot, phoneSnapshot]) {
+      if (snapshot == null) continue;
+      for (final doc in snapshot.docs) {
+        if (!doc.exists) continue;
+        if (excludeUid != null && doc.id == excludeUid) continue;
+        if (seen.contains(doc.id)) continue;
+        seen.add(doc.id);
+        users.add(UserModel.fromDocument(doc).toEntity());
+      }
+    }
+
+    return users;
+  }
+
+  @override
   Future<void> updateUser(AppUser user) async {
     final model = UserModel.fromEntity(user);
     // Only write the mutable fields; keep created_at untouched.

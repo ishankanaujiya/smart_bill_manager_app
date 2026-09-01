@@ -2,24 +2,29 @@ import 'dart:io' as io;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
+import '../../../auth/presentation/state/auth_providers.dart';
+import '../../../users/domain/entities/app_user.dart';
+import '../state/user_search_provider.dart';
 
 /// Create Group screen.
 ///
 /// Lets the user start a new group by giving it a name, an optional photo,
 /// and adding members. Designed to be pushed on top of the app shell.
-class CreateGroupScreen extends StatefulWidget {
+class CreateGroupScreen extends ConsumerStatefulWidget {
   const CreateGroupScreen({super.key});
 
   @override
-  State<CreateGroupScreen> createState() => _CreateGroupScreenState();
+  ConsumerState<CreateGroupScreen> createState() => _CreateGroupScreenState();
 }
 
-class _CreateGroupScreenState extends State<CreateGroupScreen>
+class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     with TickerProviderStateMixin {
   static const int _maxGroupNameLength = 30;
 
@@ -37,30 +42,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   late final AnimationController _entrance;
   late final AnimationController _ambient;
 
-  final List<_Member> _members = [
-    _Member(
-      name: 'Bikram Karki',
-      phone: '9841 23\u2022\u2022\u2022\u2022',
-      email: 'bikram.karki@email.com',
-      avatarUrl: 'https://i.pravatar.cc/150?u=Bikram+Karki',
-      isCurrentUser: true,
-      role: _MemberRole.admin,
-    ),
-    _Member(
-      name: 'Anisha Malla',
-      phone: '9812 34\u2022\u2022\u2022\u2022',
-      email: 'anisha.malla@email.com',
-      avatarUrl: 'https://i.pravatar.cc/150?u=Anisha+Malla',
-      role: _MemberRole.member,
-    ),
-    _Member(
-      name: 'Sujan Rijal',
-      phone: '9867 45\u2022\u2022\u2022\u2022',
-      email: 'sujan.rijal@email.com',
-      avatarUrl: 'https://i.pravatar.cc/150?u=Sujan+Rijal',
-      role: _MemberRole.member,
-    ),
-  ];
+  /// The list of members currently added to the group.
+  /// The current user is always the first entry (admin).
+  final List<_Member> _members = [];
 
   @override
   void initState() {
@@ -73,7 +57,59 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     )..repeat();
+    _loadCurrentUser();
     _startEntrance();
+  }
+
+  /// Loads the currently signed-in user from Firestore and adds them as the
+  /// admin member of the group.
+  Future<void> _loadCurrentUser() async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) return;
+
+    try {
+      final appUser =
+          await ref.read(userRepositoryProvider).getUser(firebaseUser.uid);
+      if (!mounted) return;
+
+      setState(() {
+        _members.insert(
+          0,
+          _Member.fromAppUser(
+            appUser ??
+                AppUser(
+                  id: firebaseUser.uid,
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                  fullName: firebaseUser.displayName ?? '',
+                  email: firebaseUser.email ?? '',
+                  phoneNumber: null,
+                  displayName: firebaseUser.displayName,
+                  profilePicture: firebaseUser.photoURL,
+                ),
+            isCurrentUser: true,
+            role: _MemberRole.admin,
+          ),
+        );
+      });
+    } catch (_) {
+      // If Firestore fails, fall back to Firebase Auth data.
+      if (!mounted) return;
+      setState(() {
+        _members.insert(
+          0,
+          _Member(
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName ?? 'You',
+            phone: '—',
+            email: firebaseUser.email ?? '',
+            avatarUrl: firebaseUser.photoURL,
+            isCurrentUser: true,
+            role: _MemberRole.admin,
+          ),
+        );
+      });
+    }
   }
 
   Future<void> _startEntrance() async {
@@ -94,7 +130,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   }
 
   void _removeMember(_Member member) {
-    setState(() => _members.removeWhere((m) => m.name == member.name));
+    setState(() => _members.removeWhere((m) => m.id == member.id));
   }
 
   /// Opens the system gallery and lets the user pick a single image for the
@@ -153,15 +189,20 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     );
   }
 
-  List<_Member> get _filteredMembers {
-    final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _members;
-    return _members.where((m) {
-      return m.name.toLowerCase().contains(query) ||
-          m.phone.contains(query) ||
-          m.email.toLowerCase().contains(query);
-    }).toList();
+  /// Adds a searched [AppUser] to the members list if they aren't already
+  /// added. Returns `true` if the member was added, `false` if they were
+  /// already in the list.
+  bool _addMember(AppUser user) {
+    if (_members.any((m) => m.id == user.id)) return false;
+    setState(() {
+      _members.add(_Member.fromAppUser(user));
+    });
+    return true;
   }
+
+  /// Whether the given user ID is already in the members list.
+  bool _isMemberAdded(String userId) =>
+      _members.any((m) => m.id == userId);
 
   Widget _staggered(
     Widget child,
@@ -207,6 +248,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
               _staggered(_buildMembersHeader(colorScheme), 0.40, 0.52),
               const SizedBox(height: AppSpacing.xs),
               _staggered(_buildSearchField(colorScheme), 0.44, 0.56),
+              const SizedBox(height: AppSpacing.md),
+              _buildSearchResults(colorScheme, isDark),
               const SizedBox(height: AppSpacing.md),
               _buildMembersList(colorScheme, isDark),
               const SizedBox(height: AppSpacing.md),
@@ -643,7 +686,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       controller: _searchController,
       focusNode: _searchFocus,
       textInputAction: TextInputAction.search,
-      onChanged: (_) => setState(() {}),
+      onChanged: (value) {
+        setState(() {});
+        ref.read(userSearchProvider.notifier).search(value);
+      },
       decoration: InputDecoration(
         hintText: 'Search by phone number or email',
         contentPadding: const EdgeInsets.symmetric(
@@ -655,16 +701,31 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
           color: colorScheme.onSurfaceVariant,
           size: 22,
         ),
-        suffixIcon: _AnimatedTapScale(
-          onTap: () {},
-          child: Center(
-            child: Icon(
-              Icons.perm_contact_calendar_outlined,
-              color: colorScheme.primary,
-              size: 22,
-            ),
-          ),
-        ),
+        suffixIcon: _searchController.text.isNotEmpty
+            ? _AnimatedTapScale(
+                onTap: () {
+                  _searchController.clear();
+                  ref.read(userSearchProvider.notifier).reset();
+                  setState(() {});
+                },
+                child: Center(
+                  child: Icon(
+                    Icons.close,
+                    color: colorScheme.onSurfaceVariant,
+                    size: 20,
+                  ),
+                ),
+              )
+            : _AnimatedTapScale(
+                onTap: () {},
+                child: Center(
+                  child: Icon(
+                    Icons.perm_contact_calendar_outlined,
+                    color: colorScheme.primary,
+                    size: 22,
+                  ),
+                ),
+              ),
         suffixIconConstraints: const BoxConstraints.tightFor(
           width: 44,
           height: 44,
@@ -673,8 +734,293 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     );
   }
 
+  /// Builds the live search results panel that appears below the search
+  /// field when the user types. Reads from the [userSearchProvider] and
+  /// renders loading, empty, error, and success states.
+  Widget _buildSearchResults(ColorScheme colorScheme, bool isDark) {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return const SizedBox.shrink();
+
+    final searchState = ref.watch(userSearchProvider);
+
+    return switch (searchState) {
+      UserSearchIdle() => const SizedBox.shrink(),
+      UserSearchLoading() => _buildSearchLoading(colorScheme),
+      UserSearchError(:final message) =>
+        _buildSearchError(message, colorScheme),
+      UserSearchSuccess(:final users) when users.isEmpty =>
+        _buildSearchEmpty(colorScheme),
+      UserSearchSuccess(:final users) =>
+        _buildSearchResultList(users, colorScheme, isDark),
+    };
+  }
+
+  Widget _buildSearchLoading(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Text(
+            'Searching users...',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchEmpty(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+      child: Column(
+        children: [
+          Icon(
+            Icons.person_search_outlined,
+            size: 36,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'No users found',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Try a different phone number or email',
+            style: AppTextStyles.caption.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchError(String message, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 18,
+            color: colorScheme.error,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Flexible(
+            child: Text(
+              message,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: colorScheme.error,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResultList(
+    List<AppUser> users,
+    ColorScheme colorScheme,
+    bool isDark,
+  ) {
+    return Column(
+      children: [
+        for (var i = 0; i < users.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: _buildSearchResultTile(
+              users[i],
+              colorScheme,
+              isDark,
+              index: i,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSearchResultTile(
+    AppUser user,
+    ColorScheme colorScheme,
+    bool isDark, {
+    required int index,
+  }) {
+    final name = user.displayName?.isNotEmpty == true
+        ? user.displayName!
+        : user.fullName;
+    final initials = _initials(name);
+    final isAdded = _isMemberAdded(user.id);
+
+    return _AnimatedTapScale(
+      onTap: isAdded ? null : () => _addMember(user),
+      child: Container(
+        padding: AppSpacing.cardPaddingSymmetric,
+        decoration: BoxDecoration(
+          color: isDark
+              ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
+              : colorScheme.surface,
+          borderRadius: AppRadius.radiusLg,
+          border: Border.all(
+            color: isAdded
+                ? colorScheme.primary.withValues(alpha: 0.4)
+                : colorScheme.outlineVariant.withValues(
+                    alpha: isDark ? 0.2 : 0.5,
+                  ),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Avatar — image or initials fallback.
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    colorScheme.primary,
+                    colorScheme.primary.withValues(alpha: 0.6),
+                  ],
+                ),
+              ),
+              padding: const EdgeInsets.all(2),
+              child: ClipOval(
+                child: user.profilePicture != null &&
+                        user.profilePicture!.isNotEmpty
+                    ? Image.network(
+                        user.profilePicture!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _AvatarFallback(
+                            initials: initials,
+                            colorScheme: colorScheme,
+                          );
+                        },
+                      )
+                    : _AvatarFallback(
+                        initials: initials,
+                        colorScheme: colorScheme,
+                      ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            // Name + email.
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: AppTextStyles.titleSmall.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    user.email,
+                    style: AppTextStyles.caption.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            // Add / added status.
+            if (isAdded)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: AppRadius.radiusSm,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.check,
+                      size: 14,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Added',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  borderRadius: AppRadius.radiusSm,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.person_add_alt_1,
+                      size: 14,
+                      color: colorScheme.onPrimary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Add',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: colorScheme.onPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMembersList(ColorScheme colorScheme, bool isDark) {
-    final members = _filteredMembers;
+    final members = _members;
+    if (members.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Column(
       children: [
         for (var i = 0; i < members.length; i++)
@@ -1060,6 +1406,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
 class _Member {
   const _Member({
+    required this.id,
     required this.name,
     required this.phone,
     required this.email,
@@ -1068,6 +1415,29 @@ class _Member {
     this.role = _MemberRole.member,
   });
 
+  /// Creates a [_Member] from an [AppUser] fetched from Firestore.
+  factory _Member.fromAppUser(
+    AppUser user, {
+    bool isCurrentUser = false,
+    _MemberRole role = _MemberRole.member,
+  }) {
+    final name = user.displayName?.isNotEmpty == true
+        ? user.displayName!
+        : user.fullName;
+    final phone = user.phoneNumber ?? '—';
+    return _Member(
+      id: user.id,
+      name: name,
+      phone: phone,
+      email: user.email,
+      avatarUrl: user.profilePicture,
+      isCurrentUser: isCurrentUser,
+      role: role,
+    );
+  }
+
+  /// Firestore document ID — used to prevent duplicate members.
+  final String id;
   final String name;
   final String phone;
   final String email;

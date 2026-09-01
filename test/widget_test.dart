@@ -50,6 +50,9 @@ class _StubUserRepository implements UserRepository {
   Future<AppUser?> getUser(String uid) async => null;
 
   @override
+  Future<List<AppUser>> searchUsers(String query, {String? excludeUid}) async => [];
+
+  @override
   Future<void> updateUser(AppUser user) async {}
 
   @override
