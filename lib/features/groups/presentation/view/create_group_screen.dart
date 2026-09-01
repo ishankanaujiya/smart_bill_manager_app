@@ -1,6 +1,9 @@
+import 'dart:io' as io;
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
@@ -19,12 +22,17 @@ class CreateGroupScreen extends StatefulWidget {
 class _CreateGroupScreenState extends State<CreateGroupScreen>
     with TickerProviderStateMixin {
   static const int _maxGroupNameLength = 30;
-  static const int _maxMembers = 20;
 
   final _nameController = TextEditingController();
   final _nameFocus = FocusNode();
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
+
+  /// Path of the optional group photo picked from the gallery.
+  String? _groupPhotoPath;
+
+  /// Whether the photo is currently being picked / processed.
+  bool _isPhotoLoading = false;
 
   late final AnimationController _entrance;
   late final AnimationController _ambient;
@@ -89,6 +97,56 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     setState(() => _members.removeWhere((m) => m.name == member.name));
   }
 
+  /// Opens the system gallery and lets the user pick a single image for the
+  /// group photo. The selected file path is stored in [_groupPhotoPath] and
+  /// the UI is rebuilt to display the image inside the picker card.
+  ///
+  /// The loading indicator is only shown **after** the user selects a photo
+  /// — not while the gallery is open — so the "Uploading..." label matches
+  /// the actual processing phase.
+  Future<void> _pickGroupPhoto() async {
+    if (_isPhotoLoading) return;
+
+    final picker = ImagePicker();
+    try {
+      final xFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      if (xFile == null) return; // user cancelled — no loading needed
+
+      // Photo selected — now show the loading indicator while we process.
+      if (!mounted) return;
+      setState(() => _isPhotoLoading = true);
+
+      // Brief processing delay so the loading animation is perceptible.
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      setState(() {
+        _groupPhotoPath = xFile.path;
+        _isPhotoLoading = false;
+      });
+    } on Exception catch (_) {
+      // Silently ignore — the picker may throw on devices without a gallery.
+      if (!mounted) return;
+      setState(() => _isPhotoLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not open the gallery. Please try again.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: Theme.of(context).colorScheme.onPrimary,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   void _onCreateGroup() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: const Text('Create group action triggered.')),
@@ -128,9 +186,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
+            AppSpacing.xl,
             AppSpacing.md,
-            AppSpacing.lg,
+            AppSpacing.xl,
             AppSpacing.xxxl,
           ),
           child: Column(
@@ -138,16 +196,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
             children: [
               _staggered(_buildHeader(colorScheme, isDark), 0.0, 0.14),
               const SizedBox(height: AppSpacing.xxl),
-              _staggered(_buildPhotoPicker(colorScheme), 0.08, 0.22),
-              const SizedBox(height: AppSpacing.sm),
-              _staggered(_buildPhotoLabel(colorScheme), 0.12, 0.26),
+              _staggered(_buildPhotoPicker(colorScheme, isDark), 0.08, 0.22),
               const SizedBox(height: AppSpacing.xxxl),
               _staggered(_buildGroupNameHeader(colorScheme), 0.24, 0.36),
               const SizedBox(height: AppSpacing.xs),
               _staggered(_buildGroupNameField(colorScheme), 0.28, 0.40),
               const SizedBox(height: AppSpacing.xs),
               _staggered(_buildNameHint(colorScheme), 0.32, 0.44),
-              const SizedBox(height: AppSpacing.xxxl),
+              const SizedBox(height: AppSpacing.xxl),
               _staggered(_buildMembersHeader(colorScheme), 0.40, 0.52),
               const SizedBox(height: AppSpacing.xs),
               _staggered(_buildSearchField(colorScheme), 0.44, 0.56),
@@ -215,114 +271,284 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     );
   }
 
-  Widget _buildPhotoPicker(ColorScheme colorScheme) {
-    return Center(
-      child: _AnimatedTapScale(
-        onTap: () {},
-        child: SizedBox(
-          width: 146,
-          height: 146,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              _DashedCircle(
-                color: colorScheme.primary,
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: AnimatedBuilder(
-                    animation: _ambient,
-                    builder: (context, child) {
-                      final pulse =
-                          1 + 0.02 * (1 - math.cos(math.pi * 2 * _ambient.value));
-                      return Transform.scale(scale: pulse, child: child);
-                    },
-                    child: Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.group_outlined,
-                        color: colorScheme.primary,
-                        size: 44,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 4,
-                left: 4,
-                child: Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: colorScheme.surface,
-                      width: 2,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.add,
-                    color: colorScheme.onPrimary,
-                    size: 12,
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: -4,
-                right: -4,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: colorScheme.surface,
-                      width: 2,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.camera_alt,
-                    color: colorScheme.onPrimary,
-                    size: 16,
-                  ),
-                ),
-              ),
-            ],
+  Widget _buildPhotoPicker(ColorScheme colorScheme, bool isDark) {
+    final pickerBg = colorScheme.primaryContainer.withValues(
+      alpha: isDark ? 0.2 : 0.6,
+    );
+    final cardBg = isDark
+        ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.4)
+        : colorScheme.primaryContainer.withValues(alpha: 0.3);
+
+    final hasPhoto = _groupPhotoPath != null;
+    final isLoading = _isPhotoLoading;
+
+    return _AnimatedTapScale(
+      onTap: isLoading ? null : _pickGroupPhoto,
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: cardBg,
+          borderRadius: AppRadius.radiusXxl,
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: isDark ? 0.2 : 0.5),
           ),
         ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Left text content.
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        hasPhoto ? Icons.check_circle_rounded : Icons.add,
+                        color: hasPhoto
+                            ? colorScheme.primary
+                            : colorScheme.primary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        hasPhoto ? 'Group Photo' : 'Add Group Photo',
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    hasPhoto
+                        ? 'Looking great! Tap to change the photo.'
+                        : 'Add a photo to make your group more personal',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.xs,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface,
+                      borderRadius: AppRadius.radiusFull,
+                      border: Border.all(
+                        color: colorScheme.primary.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          hasPhoto ? Icons.edit : Icons.auto_awesome,
+                          color: colorScheme.primary,
+                          size: 14,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(
+                          hasPhoto ? 'Change' : 'Optional',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.lg),
+            // Right dashed circle picker.
+            SizedBox(
+              width: 110,
+              height: 110,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  _DashedCircle(
+                    color: colorScheme.primary.withValues(alpha: 0.6),
+                    dash: 4.0,
+                    gap: 3.0,
+                    strokeWidth: 1.0,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: SizedBox(
+                        width: 96,
+                        height: 96,
+                        child: ClipOval(
+                          child: hasPhoto
+                              ? Image.file(
+                                  io.File(_groupPhotoPath!),
+                                  width: 96,
+                                  height: 96,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(
+                                  width: 96,
+                                  height: 96,
+                                  decoration: BoxDecoration(
+                                    color: pickerBg,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.group_outlined,
+                                    color: colorScheme.primary,
+                                    size: 36,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Plus / edit badge.
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colorScheme.surface,
+                          width: 2,
+                        ),
+                      ),
+                      child: Icon(
+                        hasPhoto ? Icons.edit : Icons.add,
+                        color: colorScheme.onPrimary,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                  // Camera badge.
+                  Positioned(
+                    bottom: -6,
+                    right: 4,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colorScheme.surface,
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        hasPhoto ? Icons.camera_alt : Icons.camera_alt,
+                        color: colorScheme.onPrimary,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                  if (!hasPhoto) ...[
+                    // Decorative image thumbnails on the right (only when
+                    // no photo has been picked yet).
+                    Positioned(
+                      top: 18,
+                      right: -28,
+                      child: _buildThumbnail(colorScheme, isDark, size: 32),
+                    ),
+                    Positioned(
+                      bottom: 12,
+                      right: -22,
+                      child: _buildThumbnail(colorScheme, isDark, size: 24),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+          // Loading overlay — covers the entire card with a frosted blur
+          // and a centered animated indicator while the photo is being
+          // picked / processed.
+          if (isLoading)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: AppRadius.radiusXxl,
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(
+                    sigmaX: 3,
+                    sigmaY: 3,
+                  ),
+                  child: Container(
+                    color: colorScheme.surface.withValues(alpha: 0.4),
+                    alignment: Alignment.center,
+                    child: _PhotoLoadingIndicator(
+                      ambient: _ambient,
+                      colorScheme: colorScheme,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildPhotoLabel(ColorScheme colorScheme) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'Add Group Photo',
-          style: AppTextStyles.titleMedium.copyWith(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.w600,
+  Widget _buildThumbnail(
+    ColorScheme colorScheme,
+    bool isDark, {
+    required double size,
+  }) {
+    return Transform.rotate(
+      angle: (math.pi / 12) * (size == 32 ? 1 : -1),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: AppRadius.radiusSm,
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(
+              alpha: isDark ? 0.3 : 0.6,
+            ),
+            width: 1,
           ),
-          textAlign: TextAlign.center,
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.primary.withValues(alpha: 0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-        const SizedBox(height: 2),
-        Text(
-          'Optional',
-          style: AppTextStyles.bodySmall.copyWith(
-            color: colorScheme.onSurfaceVariant,
+        child: ClipRRect(
+          borderRadius: AppRadius.radiusSm,
+          child: Icon(
+            Icons.image,
+            color: colorScheme.primary.withValues(alpha: 0.5),
+            size: size * 0.55,
           ),
-          textAlign: TextAlign.center,
         ),
-      ],
+      ),
     );
   }
 
@@ -396,7 +622,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     return Row(
       children: [
         Icon(
-          Icons.group_add_outlined,
+          Icons.group_outlined,
           color: colorScheme.primary,
           size: 20,
         ),
@@ -407,24 +633,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
             color: colorScheme.onSurface,
           ),
         ),
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.xs,
-          ),
-          decoration: BoxDecoration(
-            color: colorScheme.primaryContainer,
-            borderRadius: AppRadius.radiusFull,
-          ),
-          child: Text(
-            '${_members.length}/$_maxMembers',
-            style: AppTextStyles.labelSmall.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
+        
       ],
     );
   }
@@ -495,17 +704,22 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
         Container(
           padding: AppSpacing.cardPaddingSymmetric,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                colorScheme.primaryContainer.withValues(alpha: 0.55),
-                colorScheme.primaryContainer.withValues(alpha: 0.25),
-              ],
-            ),
+            color: isDark ? null : colorScheme.surface,
+            gradient: isDark
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      colorScheme.primaryContainer.withValues(alpha: 0.55),
+                      colorScheme.primaryContainer.withValues(alpha: 0.25),
+                    ],
+                  )
+                : null,
             borderRadius: AppRadius.radiusLg,
             border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.25),
+              color: isDark
+                  ? colorScheme.primary.withValues(alpha: 0.25)
+                  : colorScheme.outlineVariant,
             ),
           ),
           child: Row(
@@ -620,7 +834,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   Widget _buildAvatar(_Member member, ColorScheme colorScheme) {
     final url = member.avatarUrl;
     final initials = _initials(member.name);
-    const double size = 52;
+    const double size = 56;
 
     return SizedBox(
       width: size,
@@ -933,6 +1147,117 @@ class _AvatarFallback extends StatelessWidget {
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Photo loading indicator — a polished animated indicator shown while the
+// group photo is being picked / processed.
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _PhotoLoadingIndicator extends StatelessWidget {
+  const _PhotoLoadingIndicator({
+    required this.ambient,
+    required this.colorScheme,
+  });
+
+  final AnimationController ambient;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    // Spinner rotation — driven by the shared ambient controller.
+    final spin = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: ambient, curve: Curves.linear),
+    );
+    // Pulse — a gentle scale breathing effect.
+    final pulse = Tween<double>(begin: 0.92, end: 1.0).animate(
+      CurvedAnimation(parent: ambient, curve: Curves.easeInOutSine),
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedBuilder(
+          animation: ambient,
+          builder: (context, child) {
+            return Transform.scale(
+              scale: pulse.value,
+              child: Transform.rotate(
+                angle: spin.value * 2 * math.pi,
+                child: child,
+              ),
+            );
+          },
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: CustomPaint(
+              painter: _LoadingRingPainter(
+                color: colorScheme.primary,
+                trackColor: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Uploading...',
+          style: AppTextStyles.labelSmall.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Paints a circular loading ring with a 270° arc and rounded caps.
+class _LoadingRingPainter extends CustomPainter {
+  _LoadingRingPainter({
+    required this.color,
+    required this.trackColor,
+  });
+
+  final Color color;
+  final Color trackColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 3;
+    const startAngle = -math.pi / 2; // top
+    const sweep = math.pi * 1.5; // 270°
+
+    // Track (full circle, faint).
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+
+    // Active arc.
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawArc(
+      rect,
+      startAngle,
+      sweep,
+      false,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LoadingRingPainter old) =>
+      old.color != color || old.trackColor != trackColor;
+}
+
 class _AnimatedTapScale extends StatefulWidget {
   const _AnimatedTapScale({
     required this.child,
@@ -972,15 +1297,26 @@ class _DashedCircle extends StatelessWidget {
   const _DashedCircle({
     required this.child,
     required this.color,
+    this.dash = 6.0,
+    this.gap = 4.0,
+    this.strokeWidth = 1.5,
   });
 
   final Widget child;
   final Color color;
+  final double dash;
+  final double gap;
+  final double strokeWidth;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      foregroundPainter: _DashedCirclePainter(color: color),
+      foregroundPainter: _DashedCirclePainter(
+        color: color,
+        dash: dash,
+        gap: gap,
+        strokeWidth: strokeWidth,
+      ),
       child: child,
     );
   }
@@ -1023,15 +1359,20 @@ Path _dashPath(Path source, double dash, double gap) {
 }
 
 class _DashedCirclePainter extends CustomPainter {
-  _DashedCirclePainter({required this.color});
+  _DashedCirclePainter({
+    required this.color,
+    this.dash = 6.0,
+    this.gap = 4.0,
+    this.strokeWidth = 1.5,
+  });
 
   final Color color;
+  final double dash;
+  final double gap;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
-    const dash = 6.0;
-    const gap = 4.0;
-    const strokeWidth = 1.5;
     final center = size.center(Offset.zero);
     final radius = size.width / 2 - strokeWidth / 2;
     final path = Path()
@@ -1047,7 +1388,10 @@ class _DashedCirclePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DashedCirclePainter old) =>
-      old.color != color;
+      old.color != color ||
+      old.dash != dash ||
+      old.gap != gap ||
+      old.strokeWidth != strokeWidth;
 }
 
 class _DashedRRectPainter extends CustomPainter {
