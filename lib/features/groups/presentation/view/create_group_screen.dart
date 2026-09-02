@@ -11,6 +11,8 @@ import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
 import '../../../auth/presentation/state/auth_providers.dart';
 import '../../../users/domain/entities/app_user.dart';
+import '../../domain/entities/group.dart';
+import '../state/group_providers.dart';
 import '../state/user_search_provider.dart';
 
 /// Create Group screen.
@@ -38,6 +40,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
 
   /// Whether the photo is currently being picked / processed.
   bool _isPhotoLoading = false;
+
+  /// Whether the group is currently being created (uploading photo +
+  /// writing to Firestore). Drives the create button's loading state.
+  bool _isCreating = false;
 
   late final AnimationController _entrance;
   late final AnimationController _ambient;
@@ -183,9 +189,106 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     }
   }
 
-  void _onCreateGroup() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: const Text('Create group action triggered.')),
+  /// Validates the form, uploads the optional group photo to Cloudinary,
+  /// and persists the group (with the creator's and members' profile
+  /// snapshots) to the Firestore "Groups" collection.
+  Future<void> _onCreateGroup() async {
+    if (_isCreating) return;
+
+    final groupName = _nameController.text.trim();
+    if (groupName.isEmpty) {
+      _nameFocus.requestFocus();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please enter a group name.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: Theme.of(context).colorScheme.onPrimary,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (_members.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'A group needs at least one member.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: Theme.of(context).colorScheme.onPrimary,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isCreating = true);
+
+    // The current user is always the first member and the group admin.
+    final members = _members.map((m) => _toGroupMember(m)).toList();
+    final createdByUid = _members.first.id;
+    final groupAdmin = _toGroupMember(_members.first, isAdmin: true);
+
+    final success = await ref.read(createGroupProvider.notifier).createGroup(
+          groupName: groupName,
+          createdByUid: createdByUid,
+          groupAdmin: groupAdmin,
+          members: members,
+          groupPhotoPath: _groupPhotoPath,
+        );
+
+    if (!mounted) return;
+    setState(() => _isCreating = false);
+
+    final createState = ref.read(createGroupProvider);
+    if (success && createState is CreateGroupSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Group "${createState.group.groupName}" created.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: Theme.of(context).colorScheme.onPrimary,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.of(context).maybePop();
+    } else if (createState is CreateGroupError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            createState.message,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: Theme.of(context).colorScheme.onPrimary,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// Converts the screen's private [_Member] representation into a
+  /// [GroupMember] domain entity that can be persisted to Firestore.
+  GroupMember _toGroupMember(_Member member, {bool isAdmin = false}) {
+    return GroupMember(
+      id: member.id,
+      fullName: member.name,
+      email: member.email,
+      phoneNumber: member.phone == '—' ? null : member.phone,
+      displayName: member.name,
+      profilePicture: member.avatarUrl,
+      role: isAdmin ? MemberRole.admin : member.role.toMemberRole,
     );
   }
 
@@ -1721,7 +1824,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
 
   Widget _buildCreateButton(ColorScheme colorScheme, bool isDark) {
     return _AnimatedTapScale(
-      onTap: _onCreateGroup,
+      onTap: _isCreating ? null : _onCreateGroup,
       child: AnimatedBuilder(
         animation: _ambient,
         builder: (context, child) {
@@ -1748,20 +1851,34 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
           width: double.infinity,
           height: 56,
           decoration: BoxDecoration(
-            color: colorScheme.primary,
+            color: _isCreating
+                ? colorScheme.primary.withValues(alpha: 0.7)
+                : colorScheme.primary,
             borderRadius: AppRadius.radiusMd,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.group,
-                color: colorScheme.onPrimary,
-                size: 20,
-              ),
+              if (_isCreating)
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      colorScheme.onPrimary,
+                    ),
+                  ),
+                )
+              else
+                Icon(
+                  Icons.group,
+                  color: colorScheme.onPrimary,
+                  size: 20,
+                ),
               const SizedBox(width: AppSpacing.sm),
               Text(
-                'Create Group',
+                _isCreating ? 'Creating...' : 'Create Group',
                 style: AppTextStyles.labelLarge.copyWith(
                   color: colorScheme.onPrimary,
                   fontWeight: FontWeight.w600,
@@ -1834,6 +1951,15 @@ class _Member {
 }
 
 enum _MemberRole { admin, member }
+
+/// Maps the screen-private [_MemberRole] to the domain [MemberRole] used
+/// when persisting a group to Firestore.
+extension _MemberRoleX on _MemberRole {
+  MemberRole get toMemberRole => switch (this) {
+        _MemberRole.admin => MemberRole.admin,
+        _MemberRole.member => MemberRole.member,
+      };
+}
 
 class _Badge extends StatelessWidget {
   const _Badge({

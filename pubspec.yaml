@@ -39,6 +39,9 @@ dependencies:
   # Monitoring
   sentry_flutter: ^9.26.0
 
+  # Networking (Cloudinary uploads)
+  http: ^1.2.2
+
   # UI
   fl_chart: ^0.70.2
   cupertino_icons: ^1.0.8
