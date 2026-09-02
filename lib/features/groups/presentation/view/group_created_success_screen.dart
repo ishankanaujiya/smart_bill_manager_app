@@ -92,6 +92,43 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
     );
   }
 
+  /// Background color that matches the [_LayeredBackdrop] solid color,
+  /// so neumorphic cards blend seamlessly with the backdrop.
+  Color _cardBg(bool isDark) =>
+      isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+
+  /// Returns the neumorphic shadow pair used for cards that sit on the
+  /// backdrop. In light mode a soft white highlight and a cool gray shadow
+  /// are used; in dark mode the light highlight is subtle and the dark
+  /// shadow is diffused so it doesn't look muddy.
+  List<BoxShadow> _neumorphicShadows(bool isDark) {
+    return isDark
+        ? [
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.10),
+              blurRadius: 12,
+              offset: const Offset(-5, -5),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.50),
+              blurRadius: 16,
+              offset: const Offset(5, 5),
+            ),
+          ]
+        : [
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.70),
+              blurRadius: 10,
+              offset: const Offset(-5, -5),
+            ),
+            BoxShadow(
+              color: const Color(0xFF94A3B8).withValues(alpha: 0.25),
+              blurRadius: 12,
+              offset: const Offset(5, 5),
+            ),
+          ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -160,7 +197,7 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
                           if (widget.onAddAnother != null) ...[
                             const SizedBox(height: AppSpacing.md),
                             _stagger(
-                              _buildAddAnotherButton(colorScheme),
+                              _buildAddAnotherButton(colorScheme, isDark),
                               0.66,
                               0.80,
                               slide: 36,
@@ -211,24 +248,24 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
       _OrbitingDot(
           ambient: _ambient,
           colorScheme: colorScheme,
-          color: colorScheme.primary,
+          color: colorScheme.primary.withValues(alpha: 0.5),
           radius: 100,
           startAngle: 0,
-          size: 8),
-      _OrbitingDot(
-          ambient: _ambient,
-          colorScheme: colorScheme,
-          color: colorScheme.tertiary,
-          radius: 100,
-          startAngle: math.pi,
           size: 6),
       _OrbitingDot(
           ambient: _ambient,
           colorScheme: colorScheme,
-          color: colorScheme.primary.withValues(alpha: 0.6),
+          color: colorScheme.outlineVariant.withValues(alpha: 0.8),
+          radius: 100,
+          startAngle: math.pi,
+          size: 5),
+      _OrbitingDot(
+          ambient: _ambient,
+          colorScheme: colorScheme,
+          color: colorScheme.primary.withValues(alpha: 0.35),
           radius: 110,
           startAngle: math.pi / 2,
-          size: 5),
+          size: 4),
     ];
   }
 
@@ -241,20 +278,24 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Small "SUCCESS" eyebrow label in primaryContainer style.
+          // Small "SUCCESS" eyebrow label — subtle outline pill.
           Container(
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.md,
               vertical: AppSpacing.xxs,
             ),
             decoration: BoxDecoration(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.6),
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               borderRadius: AppRadius.radiusFull,
+              border: Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.35),
+                width: 1,
+              ),
             ),
             child: Text(
               'SUCCESS',
               style: AppTextStyles.labelSmall.copyWith(
-                color: colorScheme.onPrimaryContainer,
+                color: colorScheme.primary,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.5,
                 fontSize: 10,
@@ -301,6 +342,9 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
         .split(' ')
         .first;
 
+    final cardBg = _cardBg(isDark);
+    final shadows = _neumorphicShadows(isDark);
+
     return Row(
       children: [
         Expanded(
@@ -313,9 +357,11 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
             value: '${widget.group.memberCount}',
             colorScheme: colorScheme,
             isDark: isDark,
+            cardBg: cardBg,
+            shadows: shadows,
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
+        const SizedBox(width: AppSpacing.md),
         Expanded(
           child: _StatPill(
             master: _master,
@@ -326,9 +372,11 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
             value: adminName,
             colorScheme: colorScheme,
             isDark: isDark,
+            cardBg: cardBg,
+            shadows: shadows,
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
+        const SizedBox(width: AppSpacing.md),
         Expanded(
           child: _StatPill(
             master: _master,
@@ -339,6 +387,8 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
             value: _formatDate(widget.group.createdAt),
             colorScheme: colorScheme,
             isDark: isDark,
+            cardBg: cardBg,
+            shadows: shadows,
           ),
         ),
       ],
@@ -356,66 +406,44 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark
-            ? colorScheme.surface.withValues(alpha: 0.6)
-            : colorScheme.surface,
-        borderRadius: AppRadius.radiusXl,
-        border: Border.all(
-          color: colorScheme.primaryContainer.withValues(alpha: 0.5),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.primary.withValues(alpha: isDark ? 0.08 : 0.06),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        // Match the backdrop gradient so the neumorphic shadows pop.
+        color: _cardBg(isDark),
+        borderRadius: AppRadius.radiusLg,
+        // Neumorphic soft shadows: light top-left, dark bottom-right.
+        boxShadow: _neumorphicShadows(isDark),
       ),
       child: Column(
         children: [
-          // Header strip — primary with subtle gradient depth.
+          // Header strip — same color as the card body so the neumorphic
+          // surface stays unified; a thin primary line separates it from
+          // the member rows below.
           Container(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.md,
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.lg,
             ),
             decoration: BoxDecoration(
-              color: colorScheme.primary,
+              color: _cardBg(isDark),
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(AppRadius.xl),
-                topRight: Radius.circular(AppRadius.xl),
+                topLeft: Radius.circular(AppRadius.lg),
+                topRight: Radius.circular(AppRadius.lg),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: colorScheme.primary.withValues(alpha: 0.25),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+              border: Border(
+                bottom: BorderSide(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                  width: 1.5,
                 ),
-              ],
+              ),
             ),
             child: Row(
               children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: colorScheme.onPrimary.withValues(alpha: 0.2),
-                    borderRadius: AppRadius.radiusXs,
-                  ),
-                  child: Icon(Icons.people_alt_rounded,
-                      color: colorScheme.onPrimary, size: 16),
-                ),
+                Icon(Icons.people_alt_rounded,
+                    color: colorScheme.primary, size: 20),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
                   'Members',
                   style: AppTextStyles.titleSmall.copyWith(
-                    color: colorScheme.onPrimary,
+                    color: colorScheme.onSurface,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -426,13 +454,13 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
                     vertical: AppSpacing.xxs,
                   ),
                   decoration: BoxDecoration(
-                    color: colorScheme.onPrimary.withValues(alpha: 0.2),
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.5),
                     borderRadius: AppRadius.radiusFull,
                   ),
                   child: Text(
                     '${widget.group.memberCount}',
                     style: AppTextStyles.labelMedium.copyWith(
-                      color: colorScheme.onPrimary,
+                      color: colorScheme.onPrimaryContainer,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -443,8 +471,8 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
           // Member rows.
           Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.md,
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.lg,
             ),
             child: Column(
               children: [
@@ -459,22 +487,26 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
                   if (i < visible.length - 1)
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.xxs),
+                          vertical: AppSpacing.sm),
                       child: Divider(
                         height: 1,
                         color:
-                            colorScheme.primaryContainer.withValues(alpha: 0.6),
+                            colorScheme.outlineVariant.withValues(
+                              alpha: isDark ? 0.3 : 0.5,
+                            ),
                       ),
                     ),
                 ],
                 if (overflow > 0) ...[
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xxs),
+                        vertical: AppSpacing.sm),
                     child: Divider(
                       height: 1,
                       color:
-                          colorScheme.primaryContainer.withValues(alpha: 0.6),
+                          colorScheme.outlineVariant.withValues(
+                            alpha: isDark ? 0.3 : 0.5,
+                          ),
                     ),
                   ),
                   _OverflowRow(
@@ -510,13 +542,13 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
           borderRadius: AppRadius.radiusMd,
           boxShadow: [
             BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.45),
-              blurRadius: 20,
+              color: colorScheme.primary.withValues(alpha: 0.25),
+              blurRadius: 16,
               spreadRadius: 0,
-              offset: const Offset(0, 8),
+              offset: const Offset(0, 6),
             ),
             BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.15),
+              color: colorScheme.primary.withValues(alpha: 0.08),
               blurRadius: 6,
               spreadRadius: 0,
               offset: const Offset(0, 2),
@@ -543,7 +575,7 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
     );
   }
 
-  Widget _buildAddAnotherButton(ColorScheme colorScheme) {
+  Widget _buildAddAnotherButton(ColorScheme colorScheme, bool isDark) {
     return Center(
       child: _TapScale(
         onTap: () => widget.onAddAnother?.call(),
@@ -553,22 +585,25 @@ class _GroupCreatedSuccessScreenState extends State<GroupCreatedSuccessScreen>
             vertical: AppSpacing.md,
           ),
           decoration: BoxDecoration(
-            color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+            color: colorScheme.surface.withValues(alpha: 0.6),
             borderRadius: AppRadius.radiusFull,
             border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.3),
+              color: colorScheme.outlineVariant.withValues(
+                alpha: isDark ? 0.3 : 0.5,
+              ),
               width: 1.5,
             ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.add_rounded, color: colorScheme.primary, size: 20),
+              Icon(Icons.add_rounded,
+                  color: colorScheme.onSurfaceVariant, size: 20),
               const SizedBox(width: AppSpacing.xs),
               Text(
                 'Add another group',
                 style: AppTextStyles.labelLarge.copyWith(
-                  color: colorScheme.primary,
+                  color: colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -607,30 +642,19 @@ class _LayeredBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
+        // Solid backdrop — neumorphic cards require an exact color match
+        // with the surface they sit on, so a flat color is used instead
+        // of a gradient.
         Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      Color(0xFF0F172A),
-                      Color(0xFF1E293B),
-                      Color(0xFF0F172A),
-                    ]
-                  : [
-                      Color(0xFFF0FDFA),
-                      Color(0xFFF8FAFC),
-                      Color(0xFFEFF6FF),
-                    ],
-            ),
-          ),
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
         ),
         // Smoothly floating shapes — sine wave gives 0→1→0 ping-pong.
-        // Each uses a different shade/variant of the primary family.
+        // Muted surface/outline variants keep the backdrop from competing
+        // with the content.
         _FloatingShape(
           ambient: ambient,
-          color: colorScheme.primary.withValues(alpha: isDark ? 0.12 : 0.16),
+          color: colorScheme.outlineVariant
+              .withValues(alpha: isDark ? 0.20 : 0.30),
           top: 50,
           left: -30,
           size: 120,
@@ -640,7 +664,8 @@ class _LayeredBackdrop extends StatelessWidget {
         ),
         _FloatingShape(
           ambient: ambient,
-          color: colorScheme.tertiary.withValues(alpha: isDark ? 0.10 : 0.14),
+          color: colorScheme.surfaceContainerHighest
+              .withValues(alpha: isDark ? 0.25 : 0.35),
           top: 100,
           right: -20,
           size: 90,
@@ -650,7 +675,7 @@ class _LayeredBackdrop extends StatelessWidget {
         ),
         _FloatingShape(
           ambient: ambient,
-          color: colorScheme.primaryContainer
+          color: colorScheme.outlineVariant
               .withValues(alpha: isDark ? 0.15 : 0.25),
           bottom: 80,
           left: -15,
@@ -661,7 +686,8 @@ class _LayeredBackdrop extends StatelessWidget {
         ),
         _FloatingShape(
           ambient: ambient,
-          color: colorScheme.tertiary.withValues(alpha: isDark ? 0.08 : 0.11),
+          color: colorScheme.surfaceContainerHighest
+              .withValues(alpha: isDark ? 0.20 : 0.30),
           bottom: 180,
           right: -10,
           size: 100,
@@ -703,21 +729,22 @@ class _FloatingShape extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: ambient,
-      builder: (context, child) {
-        // Smooth sine wave: 0 → 1 → 0 → 1 → 0 (ping-pong, no snap).
-        final v = (math.sin((ambient.value + phase) * math.pi * 2) * 0.5 + 0.5);
-        return Transform.translate(
-          offset: Offset(0, -floatDistance * v),
-          child: child,
-        );
-      },
-      child: Positioned(
-        top: top,
-        bottom: bottom,
-        left: left,
-        right: right,
+    return Positioned(
+      top: top,
+      bottom: bottom,
+      left: left,
+      right: right,
+      child: AnimatedBuilder(
+        animation: ambient,
+        builder: (context, child) {
+          // Smooth sine wave: 0 → 1 → 0 → 1 → 0 (ping-pong, no snap).
+          final v =
+              (math.sin((ambient.value + phase) * math.pi * 2) * 0.5 + 0.5);
+          return Transform.translate(
+            offset: Offset(0, -floatDistance * v),
+            child: child,
+          );
+        },
         child: CustomPaint(
           size: Size(size, size),
           painter: _ShapePainter(color: color, shape: shape),
@@ -802,8 +829,8 @@ class _BreathingGlow extends StatelessWidget {
           shape: BoxShape.circle,
           gradient: RadialGradient(
             colors: [
-              colorScheme.primary,
-              colorScheme.primaryContainer,
+              colorScheme.primary.withValues(alpha: 0.6),
+              colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
               colorScheme.primary.withValues(alpha: 0),
             ],
             stops: [0.0, 0.45, 1.0],
@@ -1114,6 +1141,8 @@ class _StatPill extends StatelessWidget {
     required this.value,
     required this.colorScheme,
     required this.isDark,
+    required this.cardBg,
+    required this.shadows,
   });
 
   final AnimationController master;
@@ -1124,6 +1153,8 @@ class _StatPill extends StatelessWidget {
   final String value;
   final ColorScheme colorScheme;
   final bool isDark;
+  final Color cardBg;
+  final List<BoxShadow> shadows;
 
   @override
   Widget build(BuildContext context) {
@@ -1150,38 +1181,19 @@ class _StatPill extends StatelessWidget {
           vertical: AppSpacing.md,
         ),
         decoration: BoxDecoration(
-          color: colorScheme.primaryContainer.withValues(
-            alpha: isDark ? 0.35 : 0.5,
-          ),
+          // Match the backdrop so the neumorphic shadows pop.
+          color: cardBg,
           borderRadius: AppRadius.radiusLg,
-          border: Border.all(
-            color: colorScheme.primary.withValues(alpha: 0.2),
-            width: 1,
-          ),
+          boxShadow: shadows,
         ),
         child: Column(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: colorScheme.primary,
-                borderRadius: AppRadius.radiusSm,
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.primary.withValues(alpha: 0.35),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Icon(icon, color: colorScheme.onPrimary, size: 18),
-            ),
+            Icon(icon, color: colorScheme.primary, size: 22),
             const SizedBox(height: AppSpacing.xs),
             Text(
               value,
               style: AppTextStyles.titleSmall.copyWith(
-                color: colorScheme.onPrimaryContainer,
+                color: colorScheme.onSurface,
                 fontWeight: FontWeight.w800,
                 fontSize: 15,
               ),
@@ -1193,9 +1205,7 @@ class _StatPill extends StatelessWidget {
             Text(
               label,
               style: AppTextStyles.labelSmall.copyWith(
-                color: colorScheme.onPrimaryContainer.withValues(
-                  alpha: 0.7,
-                ),
+                color: colorScheme.onSurfaceVariant,
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),
@@ -1263,21 +1273,27 @@ class _MemberRow extends StatelessWidget {
           ),
         );
       },
-      child: Row(
-        children: [
-          // Avatar — primaryContainer with onPrimaryContainer text.
-          Container(
-            width: 40,
-            height: 40,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Row(
+          children: [
+            // Avatar — primaryContainer with onPrimaryContainer text.
+            Container(
+              width: 40,
+              height: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: hasPicture
                   ? null
-                  : colorScheme.primaryContainer.withValues(alpha: 0.8),
+                  : colorScheme.surfaceContainerHighest.withValues(
+                      alpha: isDark ? 0.6 : 0.7,
+                    ),
               border: Border.all(
                 color: member.isAdmin
                     ? colorScheme.primary
-                    : colorScheme.primary.withValues(alpha: 0.2),
+                    : colorScheme.outlineVariant.withValues(
+                        alpha: isDark ? 0.4 : 0.6,
+                      ),
                 width: member.isAdmin ? 2.5 : 1.5,
               ),
               image: hasPicture
@@ -1293,7 +1309,7 @@ class _MemberRow extends StatelessWidget {
                     child: Text(
                       initials,
                       style: AppTextStyles.labelMedium.copyWith(
-                        color: colorScheme.onPrimaryContainer,
+                        color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1312,7 +1328,7 @@ class _MemberRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          // Role badge — admin uses primary, member uses primaryContainer.
+          // Role badge — admin uses primaryContainer, member uses surface.
           if (member.isAdmin)
             Container(
               padding: const EdgeInsets.symmetric(
@@ -1320,26 +1336,19 @@ class _MemberRow extends StatelessWidget {
                 vertical: AppSpacing.xxs,
               ),
               decoration: BoxDecoration(
-                color: colorScheme.primary,
+                color: colorScheme.primaryContainer.withValues(alpha: 0.5),
                 borderRadius: AppRadius.radiusFull,
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.primary.withValues(alpha: 0.3),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.shield_rounded,
-                      color: colorScheme.onPrimary, size: 12),
+                      color: colorScheme.primary, size: 12),
                   const SizedBox(width: AppSpacing.xxs),
                   Text(
                     'Admin',
                     style: AppTextStyles.labelSmall.copyWith(
-                      color: colorScheme.onPrimary,
+                      color: colorScheme.onPrimaryContainer,
                       fontWeight: FontWeight.w700,
                       fontSize: 10,
                     ),
@@ -1354,21 +1363,22 @@ class _MemberRow extends StatelessWidget {
                 vertical: AppSpacing.xxs,
               ),
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: isDark ? 0.5 : 0.5,
+                ),
                 borderRadius: AppRadius.radiusFull,
               ),
               child: Text(
                 'Member',
                 style: AppTextStyles.labelSmall.copyWith(
-                  color: colorScheme.onPrimaryContainer.withValues(
-                    alpha: 0.8,
-                  ),
+                  color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
                   fontSize: 10,
                 ),
               ),
             ),
         ],
+        ),
       ),
     );
   }
