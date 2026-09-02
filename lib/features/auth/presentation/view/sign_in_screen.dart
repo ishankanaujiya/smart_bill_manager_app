@@ -169,6 +169,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
     final success = await authAction.signInWithEmailAndPassword(
       email: _emailController.text.trim(),
       password: _passwordController.text,
+      rememberMe: _rememberMe,
     );
 
     if (!mounted) return;

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/repositories/auth_repository_impl.dart';
+import '../../data/services/session_service.dart';
 import '../../../users/data/repositories/user_repository_impl.dart';
 import '../../../users/domain/entities/app_user.dart';
 import '../../../users/domain/repositories/user_repository.dart';
@@ -19,6 +20,13 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 /// Provides the singleton [UserRepository] instance.
 final userRepositoryProvider = Provider<UserRepository>((ref) {
   return UserRepositoryImpl();
+});
+
+/// Provides the singleton [SessionService] instance.
+///
+/// Used to persist the "remember me" preference across app launches.
+final sessionServiceProvider = Provider<SessionService>((ref) {
+  return SessionService();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,11 +89,12 @@ class AuthActionError extends AuthActionState {
 /// Notifier that wraps auth operations (register, sign in, Google sign-in)
 /// and exposes the loading/success/error state to the UI.
 class AuthActionNotifier extends StateNotifier<AuthActionState> {
-  AuthActionNotifier(this._authRepo, this._userRepo)
+  AuthActionNotifier(this._authRepo, this._userRepo, this._sessionService)
       : super(const AuthActionIdle());
 
   final AuthRepository _authRepo;
   final UserRepository _userRepo;
+  final SessionService _sessionService;
 
   /// Registers a new user with email/password and stores their profile
   /// data in the Firestore "Users" collection.
@@ -143,9 +152,13 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
   }
 
   /// Signs in an existing user with email and password.
+  ///
+  /// [rememberMe] persists the session across app launches when `true`. When
+  /// `false` the user will be asked to sign in again on the next app launch.
   Future<bool> signInWithEmailAndPassword({
     required String email,
     required String password,
+    required bool rememberMe,
   }) async {
     state = const AuthActionLoading();
 
@@ -160,6 +173,7 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
         return false;
       }
 
+      await _sessionService.setRememberMe(rememberMe);
       state = AuthActionSuccess((result as AuthSuccess).user);
       return true;
     } catch (e) {
@@ -178,6 +192,11 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
   /// with nulls for missing fields so the registration flow can fill
   /// them in.
   ///
+  /// Google sign-in is an interactive, consent-based flow with no
+  /// "remember me" checkbox, so the session is persisted by default —
+  /// the user stays signed in across launches until they explicitly
+  /// sign out.
+  ///
   /// Returns `(true, null)` when the profile is complete and the user
   /// can go straight to the home screen.
   /// Returns `(true, partialUser)` when the user needs to complete
@@ -195,6 +214,10 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
       }
 
       final firebaseUser = (result as AuthSuccess).user;
+
+      // Persist the session for Google sign-in (no "remember me" checkbox
+      // is presented for the social sign-in flow).
+      await _sessionService.setRememberMe(true);
 
       // Check if a Firestore user document already exists.
       final existingUser = await _userRepo.getUser(firebaseUser.uid);
@@ -273,8 +296,12 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
   }
 
   /// Signs out the current user.
+  ///
+  /// Also clears the "remember me" preference so the next app launch
+  /// starts from the welcome screen.
   Future<void> signOut() async {
     state = const AuthActionLoading();
+    await _sessionService.clear();
     await _authRepo.signOut();
     state = const AuthActionIdle();
   }
@@ -291,5 +318,6 @@ final authActionProvider =
   return AuthActionNotifier(
     ref.read(authRepositoryProvider),
     ref.read(userRepositoryProvider),
+    ref.read(sessionServiceProvider),
   );
 });

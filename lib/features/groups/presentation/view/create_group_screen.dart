@@ -14,6 +14,7 @@ import '../../../users/domain/entities/app_user.dart';
 import '../../domain/entities/group.dart';
 import '../state/group_providers.dart';
 import '../state/user_search_provider.dart';
+import 'group_created_success_screen.dart';
 
 /// Create Group screen.
 ///
@@ -249,19 +250,21 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
 
     final createState = ref.read(createGroupProvider);
     if (success && createState is CreateGroupSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Group "${createState.group.groupName}" created.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
-            ),
+      // Replace the create screen with the animated success screen so the
+      // user can't go back to the half-filled form. The success screen's
+      // "Done" button pops back to the screen that launched create-group.
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              GroupCreatedSuccessScreen(
+            group: createState.group,
           ),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          behavior: SnackBarBehavior.floating,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          transitionDuration: const Duration(milliseconds: 400),
         ),
       );
-      Navigator.of(context).maybePop();
     } else if (createState is CreateGroupError) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -321,10 +324,43 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     );
   }
 
+  /// Returns the neumorphic shadow pair used for cards that sit on the
+  /// scaffold background. In light mode a soft white highlight and a cool
+  /// gray shadow are used; in dark mode the light highlight is stronger and
+  /// the dark shadow is heavily reduced so it doesn't look muddy.
+  List<BoxShadow> _neumorphicShadows(bool isDark) {
+    return isDark
+        ? [
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.08),
+              blurRadius: 8,
+              offset: const Offset(-3, -3),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.40),
+              blurRadius: 12,
+              offset: const Offset(4, 4),
+            ),
+          ]
+        : [
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.45),
+              blurRadius: 6,
+              offset: const Offset(-3, -3),
+            ),
+            BoxShadow(
+              color: Color(0xFF94A3B8).withValues(alpha: 0.18),
+              blurRadius: 8,
+              offset: const Offset(4, 4),
+            ),
+          ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
 
     return Scaffold(
       body: SafeArea(
@@ -352,11 +388,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
               const SizedBox(height: AppSpacing.sm),
               _staggered(_buildSearchField(colorScheme), 0.44, 0.56),
               const SizedBox(height: AppSpacing.md),
-              _buildSearchResults(colorScheme, isDark),
+              _buildSearchResults(colorScheme, isDark, scaffoldBg),
               const SizedBox(height: AppSpacing.md),
-              _buildMembersList(colorScheme, isDark),
+              _buildMembersList(colorScheme, isDark, scaffoldBg),
               const SizedBox(height: AppSpacing.md),
-              _staggered(_buildAddMoreCard(colorScheme), 0.74, 0.86),
+              // _staggered(_buildAddMoreCard(colorScheme), 0.74, 0.86),
               const SizedBox(height: AppSpacing.xxxl),
               _staggered(_buildCreateButton(colorScheme, isDark), 0.80, 0.92),
               const SizedBox(height: AppSpacing.md),
@@ -882,7 +918,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
   /// Builds the live search results panel that appears below the search
   /// field when the user types. Reads from the [userSearchProvider] and
   /// renders loading, empty, error, and success states.
-  Widget _buildSearchResults(ColorScheme colorScheme, bool isDark) {
+  Widget _buildSearchResults(
+    ColorScheme colorScheme,
+    bool isDark,
+    Color scaffoldBg,
+  ) {
     final query = _searchController.text.trim();
     if (query.isEmpty) return const SizedBox.shrink();
 
@@ -896,7 +936,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
       UserSearchSuccess(:final users) when users.isEmpty =>
         _buildSearchEmpty(colorScheme),
       UserSearchSuccess(:final users) =>
-        _buildSearchResultList(users, colorScheme, isDark),
+        _buildSearchResultList(users, colorScheme, isDark, scaffoldBg),
     };
   }
 
@@ -1044,6 +1084,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     List<AppUser> users,
     ColorScheme colorScheme,
     bool isDark,
+    Color scaffoldBg,
   ) {
     return Column(
       children: [
@@ -1058,6 +1099,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
                 users[i],
                 colorScheme,
                 isDark,
+                scaffoldBg,
                 index: i,
               ),
             ),
@@ -1069,7 +1111,8 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
   Widget _buildSearchResultTile(
     AppUser user,
     ColorScheme colorScheme,
-    bool isDark, {
+    bool isDark,
+    Color scaffoldBg, {
     required int index,
   }) {
     final name = user.displayName?.isNotEmpty == true
@@ -1083,17 +1126,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
       child: Container(
         padding: AppSpacing.cardPaddingSymmetric,
         decoration: BoxDecoration(
-          color: isDark
-              ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
-              : colorScheme.surface,
+          // Same color as the screen so the soft 3D shadow pops.
+          color: scaffoldBg,
           borderRadius: AppRadius.radiusLg,
-          border: Border.all(
-            color: isAdded
-                ? colorScheme.primary.withValues(alpha: 0.4)
-                : colorScheme.outlineVariant.withValues(
-                    alpha: isDark ? 0.2 : 0.5,
-                  ),
-          ),
+          // Neumorphic soft shadows: light top-left, dark bottom-right.
+          boxShadow: _neumorphicShadows(isDark),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1104,14 +1141,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
               height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    colorScheme.primary,
-                    colorScheme.primary.withValues(alpha: 0.6),
-                  ],
-                ),
+                color: colorScheme.primary,
               ),
               padding: const EdgeInsets.all(2),
               child: ClipOval(
@@ -1226,7 +1256,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     );
   }
 
-  Widget _buildMembersList(ColorScheme colorScheme, bool isDark) {
+  Widget _buildMembersList(
+    ColorScheme colorScheme,
+    bool isDark,
+    Color scaffoldBg,
+  ) {
     final members = _members;
     if (members.isEmpty) {
       return const SizedBox.shrink();
@@ -1239,40 +1273,41 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Admin card — full width, unchanged.
-        _ItemEntrance(
-          key: ValueKey('member-${admin.id}'),
-          slide: 30,
-          scaleFrom: 0.90,
-          duration: const Duration(milliseconds: 500),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-            child: _buildMemberTile(admin, colorScheme, isDark),
-          ),
-        ),
-        // Only show the "Members" section when there are added members beyond
-        // the admin.
+        // Members section — label + horizontal card row, shown first.
         if (extra.isNotEmpty) ...[
           _buildMembersSectionLabel(
             count: extra.length,
             colorScheme: colorScheme,
           ),
-          const SizedBox(height: AppSpacing.lg + 4),
-          _buildMembersHorizontalRow(extra, colorScheme, isDark),
+          const SizedBox(height: AppSpacing.xs),
+          _buildMembersHorizontalRow(extra, colorScheme, isDark, scaffoldBg),
+          const SizedBox(height: AppSpacing.lg),
         ],
+        // Admin card — full width, shown below the members section.
+        _ItemEntrance(
+          key: ValueKey('member-${admin.id}'),
+          slide: 30,
+          scaleFrom: 0.90,
+          duration: const Duration(milliseconds: 500),
+          child: _buildMemberTile(admin, colorScheme, isDark, scaffoldBg),
+        ),
       ],
     );
   }
 
   /// Section label "Members" with a count badge, shown above the horizontal
   /// scroll row of added members.
+  ///
+  /// The left padding matches the [leftPad] used inside the horizontal
+  /// row so the label aligns with the left edge of the first card.
   Widget _buildMembersSectionLabel({
     required int count,
     required ColorScheme colorScheme,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(left: AppSpacing.xxs),
+      padding: const EdgeInsets.only(top: 8.0, left: 8.0),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             'Members',
@@ -1309,18 +1344,19 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     List<_Member> extra,
     ColorScheme colorScheme,
     bool isDark,
+    Color scaffoldBg,
   ) {
-    // Visual width of one card plus its right-hand spacing. The PageView is
-    // configured so each page occupies exactly this width, which lets the
-    // cards snap cleanly: a swipe fully hides the previous card and brings the
-    // next card to the left edge, with no half-visible card getting clipped.
-    const pageWidth = 148.0 + AppSpacing.md;
+    // Left padding gives the neumorphic light shadow room to render; right
+    // padding gives the cross button (which overflows 12px) room to render.
+    const leftPad = 8.0;
+    const rightPad = 14.0;
+    const pageWidth = 172.0 + leftPad + rightPad;
 
     return SizedBox(
       // Give the compact cards enough vertical room for the content (avatar,
-      // name, email, badge) plus the remove button that peeks 6dp above the
-      // card and the drop shadow that bleeds past the card edges.
-      height: 180,
+      // name, email, badge) plus the neumorphic shadow padding and the
+      // remove button that peeks above the card border.
+      height: 178,
       child: LayoutBuilder(
         builder: (context, constraints) {
           // Compute the fraction of the viewport each page should occupy so
@@ -1330,13 +1366,13 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
 
           return PageView.builder(
             scrollDirection: Axis.horizontal,
-            // Don’t pad the first/last pages to the centre; pages start at the
+            // Don't pad the first/last pages to the centre; pages start at the
             // left edge so swiping fully hides the previous card.
             padEnds: false,
-            // Snap to whole pages only — no free mid-card stopping positions.
+            // Snap to whole pages only — no mid-card stopping positions.
             physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
             // Clip each page to the viewport so cards never bleed past the
-            // screen’s padded area on the left or right.
+            // screen's padded area on the left or right.
             clipBehavior: Clip.antiAlias,
             pageSnapping: true,
             controller: PageController(viewportFraction: viewportFraction),
@@ -1349,16 +1385,25 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
                 scaleFrom: 0.92,
                 duration: const Duration(milliseconds: 420),
                 child: Align(
-                  // Keep the compact card at its natural height anchored to the
-                  // top of the 180dp row, so shadows and the remove button sit
-                  // fully inside the clipped page area.
-                  alignment: Alignment.topCenter,
+                  // Center the card vertically so the neumorphic shadow has
+                  // equal room above and below within the page clip area.
+                  alignment: Alignment.center,
                   child: Padding(
-                    padding: const EdgeInsets.only(right: AppSpacing.md),
+                    // Left: neumorphic light shadow room.
+                    // Top: cross button overflow (12px) + small clearance.
+                    // Right: cross button overflow (12px) + small clearance.
+                    // Bottom: neumorphic dark shadow room.
+                    padding: const EdgeInsets.fromLTRB(
+                      leftPad,
+                      13,
+                      rightPad,
+                      8,
+                    ),
                     child: _buildCompactMemberCard(
                       extra[index],
                       colorScheme,
                       isDark,
+                      scaffoldBg,
                     ),
                   ),
                 ),
@@ -1379,6 +1424,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     _Member member,
     ColorScheme colorScheme,
     bool isDark,
+    Color scaffoldBg,
   ) {
     return SizedBox(
       width: 148,
@@ -1391,16 +1437,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
               vertical: AppSpacing.md + 2,
             ),
             decoration: BoxDecoration(
-              color: isDark
-                  ? Theme.of(context).scaffoldBackgroundColor
-                  : colorScheme.surface,
+              // Same color as the screen so the soft 3D shadow pops.
+              color: scaffoldBg,
               borderRadius: AppRadius.radiusLg,
-              border: Border.all(
-                color: isDark
-                    ? colorScheme.primary.withValues(alpha: 0.25)
-                    : colorScheme.outlineVariant,
-              ),
-              boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
+              // Neumorphic soft shadows: light top-left, dark bottom-right.
+              boxShadow: _neumorphicShadows(isDark),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1452,12 +1493,12 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
               ],
             ),
           ),
-          // Remove button — top-right corner, but kept *inside* the card
-          // so it never overflows the PageView page and gets clipped at the
-          // screen padding.
+          // Remove button — sits on the top-right border of the card, half
+          // inside and half outside. The Stack uses Clip.none so the overflow
+          // renders, and the PageView padding gives it room.
           Positioned(
-            top: 4,
-            right: 4,
+            top: -12,
+            right: -12,
             child: _AnimatedTapScale(
               onTap: () => _removeMember(member),
               child: Container(
@@ -1496,14 +1537,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primary,
-            colorScheme.primary.withValues(alpha: 0.6),
-          ],
-        ),
+        color: colorScheme.primary,
         boxShadow: [
           BoxShadow(
             color: colorScheme.primary.withValues(alpha: 0.2),
@@ -1533,27 +1567,23 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     );
   }
 
-  Widget _buildMemberTile(_Member member, ColorScheme colorScheme, bool isDark) {
+  Widget _buildMemberTile(
+    _Member member,
+    ColorScheme colorScheme,
+    bool isDark,
+    Color scaffoldBg,
+  ) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
           padding: AppSpacing.cardPaddingSymmetric,
           decoration: BoxDecoration(
-            // Light mode keeps the original white surface. In dark mode the
-            // card now blends with the screen background (instead of using a
-            // primary-tinted gradient) so it matches the rest of the screen,
-            // while a professional elevation shadow lifts it off the canvas.
-            color: isDark
-                ? Theme.of(context).scaffoldBackgroundColor
-                : colorScheme.surface,
+            // Same color as the screen so the soft 3D shadow pops.
+            color: scaffoldBg,
             borderRadius: AppRadius.radiusLg,
-            border: Border.all(
-              color: isDark
-                  ? colorScheme.primary.withValues(alpha: 0.25)
-                  : colorScheme.outlineVariant,
-            ),
-            boxShadow: isDark ? AppShadows.mdDark : AppShadows.mdLight,
+            // Neumorphic soft shadows: light top-left, dark bottom-right.
+            boxShadow: _neumorphicShadows(isDark),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -1675,20 +1705,13 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Outer gradient ring.
+          // Outer solid primary ring.
           Container(
             width: size,
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colorScheme.primary,
-                  colorScheme.primary.withValues(alpha: 0.6),
-                ],
-              ),
+              color: colorScheme.primary,
               boxShadow: [
                 BoxShadow(
                   color: colorScheme.primary.withValues(alpha: 0.25),
@@ -1755,71 +1778,6 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     final first = parts.isNotEmpty ? parts.first[0] : '';
     final second = parts.length > 1 ? parts[1][0] : '';
     return '$first$second'.toUpperCase();
-  }
-
-  Widget _buildAddMoreCard(ColorScheme colorScheme) {
-    return _AnimatedTapScale(
-      onTap: () {},
-      child: _DashedRoundedBorder(
-        color: colorScheme.primary.withValues(alpha: 0.55),
-        radius: AppRadius.lg,
-        child: Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                colorScheme.primaryContainer.withValues(alpha: 0.55),
-                colorScheme.primaryContainer.withValues(alpha: 0.25),
-              ],
-            ),
-            borderRadius: AppRadius.radiusLg,
-          ),
-          padding: EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg + 4,
-            vertical: AppSpacing.lg + 4,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Line 1: icon + title, centered.
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _PulseIcon(
-                    animation: _ambient,
-                    color: colorScheme.primary,
-                    icon: Icons.person_add_alt_1,
-                    size: 20,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    'Add More Members',
-                    style: AppTextStyles.titleSmall.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              // Line 2: subtitle, centered.
-              Text(
-                'Search or invite more people to your group',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildCreateButton(ColorScheme colorScheme, bool isDark) {
@@ -2007,14 +1965,7 @@ class _AvatarFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primaryContainer,
-            colorScheme.primaryContainer.withValues(alpha: 0.6),
-          ],
-        ),
+        color: colorScheme.primaryContainer,
       ),
       alignment: Alignment.center,
       child: Text(
@@ -2203,29 +2154,6 @@ class _DashedCircle extends StatelessWidget {
   }
 }
 
-class _DashedRoundedBorder extends StatelessWidget {
-  const _DashedRoundedBorder({
-    required this.child,
-    required this.color,
-    required this.radius,
-  });
-
-  final Widget child;
-  final Color color;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      foregroundPainter: _DashedRRectPainter(
-        color: color,
-        radius: radius,
-      ),
-      child: child,
-    );
-  }
-}
-
 Path _dashPath(Path source, double dash, double gap) {
   final dest = Path();
   for (final metric in source.computeMetrics()) {
@@ -2273,39 +2201,6 @@ class _DashedCirclePainter extends CustomPainter {
       old.dash != dash ||
       old.gap != gap ||
       old.strokeWidth != strokeWidth;
-}
-
-class _DashedRRectPainter extends CustomPainter {
-  _DashedRRectPainter({
-    required this.color,
-    required this.radius,
-  });
-
-  final Color color;
-  final double radius;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const dash = 3.0;
-    const gap = 3.0;
-    const strokeWidth = 0.8;
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
-    );
-    final path = Path()..addRRect(rrect);
-    final dashed = _dashPath(path, dash, gap);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(dashed, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedRRectPainter old) =>
-      old.color != color || old.radius != radius;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -2779,33 +2674,4 @@ class _PopInState extends State<_PopIn>
   }
 }
 
-/// An icon that gently pulses (scales up and down) using a shared
-/// ambient animation controller — no extra controller needed.
-class _PulseIcon extends StatelessWidget {
-  const _PulseIcon({
-    required this.animation,
-    required this.color,
-    required this.icon,
-    required this.size,
-  });
 
-  final Animation<double> animation;
-  final Color color;
-  final IconData icon;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final pulse = (1 - math.cos(math.pi * 2 * animation.value)) * 0.5;
-        return Transform.scale(
-          scale: 1.0 + 0.12 * pulse,
-          child: child,
-        );
-      },
-      child: Icon(icon, color: color, size: size),
-    );
-  }
-}
