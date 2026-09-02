@@ -13,7 +13,7 @@ import 'firebase_options.dart';
 /// Using a [ValueNotifier] lets the theme mode be switched from anywhere in the
 /// app (e.g. settings) without prop-drilling or an extra dependency.
 final ValueNotifier<ThemeMode> _themeModeNotifier =
-    ValueNotifier<ThemeMode>(ThemeMode.dark);
+    ValueNotifier<ThemeMode>(ThemeMode.system);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
