@@ -240,13 +240,13 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
               _staggered(_buildPhotoPicker(colorScheme, isDark), 0.08, 0.22),
               const SizedBox(height: AppSpacing.xxxl),
               _staggered(_buildGroupNameHeader(colorScheme), 0.24, 0.36),
-              const SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: AppSpacing.sm),
               _staggered(_buildGroupNameField(colorScheme), 0.28, 0.40),
               const SizedBox(height: AppSpacing.xs),
               _staggered(_buildNameHint(colorScheme), 0.32, 0.44),
               const SizedBox(height: AppSpacing.xxl),
               _staggered(_buildMembersHeader(colorScheme), 0.40, 0.52),
-              const SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: AppSpacing.sm),
               _staggered(_buildSearchField(colorScheme), 0.44, 0.56),
               const SizedBox(height: AppSpacing.md),
               _buildSearchResults(colorScheme, isDark),
@@ -695,19 +695,25 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
 
   Widget _buildMembersHeader(ColorScheme colorScheme) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Icon(
-          Icons.group_outlined,
-          color: colorScheme.primary,
-          size: 20,
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Text(
+        Row(
+          children: [
+            Icon(
+              Icons.group_outlined,
+              color: colorScheme.primary,
+              size: 20,
+            ),
+        const SizedBox(width: AppSpacing.lg),
+            Text(
           'Add Members',
           style: AppTextStyles.labelLarge.copyWith(
             color: colorScheme.onSurface,
           ),
         ),
+          ],
+        ),
+        
         const SizedBox(width: AppSpacing.sm),
         _AnimatedCounter(
           count: _members.length,
@@ -1122,24 +1128,305 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
     if (members.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    // The admin (first member) is always rendered as a full-width card.
+    final admin = members.first;
+    final extra = members.length > 1 ? members.sublist(1) : <_Member>[];
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (var i = 0; i < members.length; i++)
-          _ItemEntrance(
-            key: ValueKey('member-${members[i].id}'),
-            delay: Duration(milliseconds: i * 60),
-            slide: 30,
-            scaleFrom: 0.90,
-            duration: const Duration(milliseconds: 500),
-            child: Padding(
-              padding: const EdgeInsets.only(
-                top: AppSpacing.sm,
-                bottom: AppSpacing.md,
-              ),
-              child: _buildMemberTile(members[i], colorScheme, isDark),
+        // Admin card — full width, unchanged.
+        _ItemEntrance(
+          key: ValueKey('member-${admin.id}'),
+          slide: 30,
+          scaleFrom: 0.90,
+          duration: const Duration(milliseconds: 500),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+            child: _buildMemberTile(admin, colorScheme, isDark),
+          ),
+        ),
+        // Only show the "Members" section when there are added members beyond
+        // the admin.
+        if (extra.isNotEmpty) ...[
+          _buildMembersSectionLabel(
+            count: extra.length,
+            colorScheme: colorScheme,
+          ),
+          const SizedBox(height: AppSpacing.lg + 4),
+          _buildMembersHorizontalRow(extra, colorScheme, isDark),
+        ],
+      ],
+    );
+  }
+
+  /// Section label "Members" with a count badge, shown above the horizontal
+  /// scroll row of added members.
+  Widget _buildMembersSectionLabel({
+    required int count,
+    required ColorScheme colorScheme,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: AppSpacing.xxs),
+      child: Row(
+        children: [
+          Text(
+            'Members',
+            style: AppTextStyles.labelLarge.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
             ),
           ),
-      ],
+          const SizedBox(width: AppSpacing.sm),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 1,
+            ),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+              borderRadius: AppRadius.radiusFull,
+            ),
+            child: Text(
+              '$count',
+              style: AppTextStyles.labelSmall.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A horizontally scrollable row of compact member cards.
+  Widget _buildMembersHorizontalRow(
+    List<_Member> extra,
+    ColorScheme colorScheme,
+    bool isDark,
+  ) {
+    // Visual width of one card plus its right-hand spacing. The PageView is
+    // configured so each page occupies exactly this width, which lets the
+    // cards snap cleanly: a swipe fully hides the previous card and brings the
+    // next card to the left edge, with no half-visible card getting clipped.
+    const pageWidth = 148.0 + AppSpacing.md;
+
+    return SizedBox(
+      // Give the compact cards enough vertical room for the content (avatar,
+      // name, email, badge) plus the remove button that peeks 6dp above the
+      // card and the drop shadow that bleeds past the card edges.
+      height: 180,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Compute the fraction of the viewport each page should occupy so
+          // cards sit flush side-by-side with the correct peek of the next one.
+          final viewportFraction =
+              (pageWidth / constraints.maxWidth).clamp(0.0, 1.0);
+
+          return PageView.builder(
+            scrollDirection: Axis.horizontal,
+            // Don’t pad the first/last pages to the centre; pages start at the
+            // left edge so swiping fully hides the previous card.
+            padEnds: false,
+            // Snap to whole pages only — no free mid-card stopping positions.
+            physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
+            // Clip each page to the viewport so cards never bleed past the
+            // screen’s padded area on the left or right.
+            clipBehavior: Clip.antiAlias,
+            pageSnapping: true,
+            controller: PageController(viewportFraction: viewportFraction),
+            itemCount: extra.length,
+            itemBuilder: (context, index) {
+              return _ItemEntrance(
+                key: ValueKey('member-${extra[index].id}'),
+                delay: Duration(milliseconds: index * 60),
+                slide: 24,
+                scaleFrom: 0.92,
+                duration: const Duration(milliseconds: 420),
+                child: Align(
+                  // Keep the compact card at its natural height anchored to the
+                  // top of the 180dp row, so shadows and the remove button sit
+                  // fully inside the clipped page area.
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: AppSpacing.md),
+                    child: _buildCompactMemberCard(
+                      extra[index],
+                      colorScheme,
+                      isDark,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  /// A compact, fixed-width card used in the horizontal members row.
+  ///
+  /// Unlike the full [_buildMemberTile], this is a vertical layout: avatar on
+  /// top, then name, then a single contact line — narrow enough to sit
+  /// side-by-side with other cards in a horizontal scroll.
+  Widget _buildCompactMemberCard(
+    _Member member,
+    ColorScheme colorScheme,
+    bool isDark,
+  ) {
+    return SizedBox(
+      width: 148,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.md + 2,
+            ),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Theme.of(context).scaffoldBackgroundColor
+                  : colorScheme.surface,
+              borderRadius: AppRadius.radiusLg,
+              border: Border.all(
+                color: isDark
+                    ? colorScheme.primary.withValues(alpha: 0.25)
+                    : colorScheme.outlineVariant,
+              ),
+              boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Avatar — smaller than the full tile.
+                _buildCompactAvatar(member, colorScheme),
+                const SizedBox(height: AppSpacing.sm + 2),
+                // Name.
+                Text(
+                  member.name,
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                // Email — single line, the most useful contact info.
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.email_outlined,
+                      size: 12,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs + 1),
+                    Flexible(
+                      child: Text(
+                        member.email,
+                        style: AppTextStyles.caption.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                // Member role chip.
+                _Badge(
+                  label: 'Member',
+                  color: colorScheme.primary,
+                  backgroundColor: colorScheme.primaryContainer,
+                ),
+              ],
+            ),
+          ),
+          // Remove button — top-right corner, but kept *inside* the card
+          // so it never overflows the PageView page and gets clipped at the
+          // screen padding.
+          Positioned(
+            top: 4,
+            right: 4,
+            child: _AnimatedTapScale(
+              onTap: () => _removeMember(member),
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: colorScheme.primary.withValues(alpha: 0.4),
+                    width: 1,
+                  ),
+                  boxShadow: AppShadows.smLight,
+                ),
+                child: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A compact avatar (40dp) for the horizontal member cards.
+  Widget _buildCompactAvatar(_Member member, ColorScheme colorScheme) {
+    final url = member.avatarUrl;
+    final initials = _initials(member.name);
+    const double size = 40;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.primary,
+            colorScheme.primary.withValues(alpha: 0.6),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.primary.withValues(alpha: 0.2),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(2),
+      child: ClipOval(
+        child: url != null && url.isNotEmpty
+            ? Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return _AvatarFallback(
+                    initials: initials,
+                    colorScheme: colorScheme,
+                  );
+                },
+              )
+            : _AvatarFallback(
+                initials: initials,
+                colorScheme: colorScheme,
+              ),
+      ),
     );
   }
 
@@ -1150,23 +1437,20 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
         Container(
           padding: AppSpacing.cardPaddingSymmetric,
           decoration: BoxDecoration(
-            color: isDark ? null : colorScheme.surface,
-            gradient: isDark
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colorScheme.primaryContainer.withValues(alpha: 0.55),
-                      colorScheme.primaryContainer.withValues(alpha: 0.25),
-                    ],
-                  )
-                : null,
+            // Light mode keeps the original white surface. In dark mode the
+            // card now blends with the screen background (instead of using a
+            // primary-tinted gradient) so it matches the rest of the screen,
+            // while a professional elevation shadow lifts it off the canvas.
+            color: isDark
+                ? Theme.of(context).scaffoldBackgroundColor
+                : colorScheme.surface,
             borderRadius: AppRadius.radiusLg,
             border: Border.all(
               color: isDark
                   ? colorScheme.primary.withValues(alpha: 0.25)
                   : colorScheme.outlineVariant,
             ),
+            boxShadow: isDark ? AppShadows.mdDark : AppShadows.mdLight,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
