@@ -16,8 +16,17 @@ abstract class GroupRepository {
   /// Fetches all groups that the user with [uid] is a member of.
   ///
   /// A group is included when the user appears in either the `members`
-  /// list or the `created_by` list.
+  /// list or the `created_by` list. Because the creator is always added
+  /// as a member (admin) during group creation, the `member_ids`
+  /// `array-contains` query covers both cases in a single read.
   Future<List<Group>> getGroupsForUser(String uid);
+
+  /// Streams all groups that the user with [uid] is a member of.
+  ///
+  /// Same membership rule as [getGroupsForUser], but emits a new list
+  /// whenever any matching document changes in Firestore. Use this for
+  /// UI that must stay in sync with the backend in real time.
+  Stream<List<Group>> watchGroupsForUser(String uid);
 
   /// Updates an existing group document with the fields in [group].
   ///

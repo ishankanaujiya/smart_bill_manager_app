@@ -179,3 +179,22 @@ final createGroupProvider =
 final currentUidProvider = Provider<String?>((ref) {
   return FirebaseAuth.instance.currentUser?.uid;
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Groups list for the current user
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Streams the list of groups the currently signed-in user belongs to.
+///
+/// Returns `null` when there is no signed-in user (the UI can treat this
+/// as an empty state). A group is included when the user is its creator
+/// or appears in its `member_ids` list — both cases are covered by the
+/// `array-contains` query because the creator is always added as a
+/// member during group creation.
+final groupsForCurrentUserProvider = StreamProvider<List<Group>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) {
+    return Stream.value(<Group>[]);
+  }
+  return ref.read(groupRepositoryProvider).watchGroupsForUser(uid);
+});

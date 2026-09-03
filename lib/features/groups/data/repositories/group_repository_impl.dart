@@ -48,6 +48,18 @@ class GroupRepositoryImpl implements GroupRepository {
   }
 
   @override
+  Stream<List<Group>> watchGroupsForUser(String uid) {
+    // Real-time equivalent of [getGroupsForUser]. Emits a fresh list
+    // whenever any matching document is added, modified, or removed.
+    return _collection
+        .where('member_ids', arrayContains: uid)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => GroupModel.fromDocument(doc).toEntity())
+            .toList());
+  }
+
+  @override
   Future<void> updateGroup(Group group) async {
     final model = GroupModel.fromEntity(group);
     // Only write the mutable fields; keep created_at untouched.
