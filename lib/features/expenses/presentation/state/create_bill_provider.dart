@@ -236,7 +236,7 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
       state = state.copyWith(
         customSplitError:
             '${remaining > 0 ? "Remaining" : "Over by"} '
-            '${AppConstants.currencySymbol} ${remaining.abs().toStringAsFixed(2)}',
+            '${AppConstants.formatCurrency(remaining.abs(), withSymbol: true)}',
       );
     } else {
       state = state.copyWith(customSplitError: null);

@@ -2,7 +2,6 @@ import 'dart:io' as io;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -57,6 +56,12 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
   /// Whether a receipt photo is currently being picked.
   bool _isPickingPhoto = false;
 
+  // ── Inline amount editing ────────────────────────────────────────────────
+  bool _isEditingAmount = false;
+  late final TextEditingController _amountEditController =
+      TextEditingController();
+  late final FocusNode _amountEditFocus = FocusNode();
+
   // ── Inline Quick Info editing ────────────────────────────────────────────
   _QuickInfoField? _editingField;
   late final TextEditingController _titleEditController = TextEditingController();
@@ -77,6 +82,13 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     )..repeat();
+
+    // Commit inline amount edit when focus is lost.
+    _amountEditFocus.addListener(() {
+      if (!_amountEditFocus.hasFocus && _isEditingAmount) {
+        _commitAmountEdit();
+      }
+    });
 
     // Commit inline edit when focus is lost.
     _titleEditFocus.addListener(() {
@@ -102,6 +114,8 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
   void dispose() {
     _entrance.dispose();
     _ambient.dispose();
+    _amountEditController.dispose();
+    _amountEditFocus.dispose();
     _titleEditController.dispose();
     _noteEditController.dispose();
     _titleEditFocus.dispose();
@@ -126,22 +140,32 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
 
   // ── Amount entry ───────────────────────────────────────────────────────────
 
-  Future<void> _openAmountDialog(ColorScheme colorScheme, bool isDark) async {
-    final controller = TextEditingController(
-      text: _form.amount > 0 ? _form.amount.toStringAsFixed(2) : '',
-    );
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => _AmountDialog(
-        controller: controller,
-        colorScheme: colorScheme,
-        isDark: isDark,
-        onConfirm: (text) {
-          final parsed = double.tryParse(text) ?? 0.0;
-          _notifier.setAmount(parsed, text);
-        },
-      ),
-    );
+  // ── Inline amount editing ──────────────────────────────────────────────────
+
+  void _startEditingAmount() {
+    setState(() {
+      _isEditingAmount = true;
+      _amountEditController.text =
+          _form.amount > 0 ? AppConstants.formatCurrency(_form.amount) : '';
+      _amountEditController.selection = TextSelection(
+        baseOffset: _amountEditController.text.length,
+        extentOffset: _amountEditController.text.length,
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _amountEditFocus.requestFocus();
+      });
+    });
+  }
+
+  void _commitAmountEdit() {
+    final text = _amountEditController.text.trim().replaceAll(',', '');
+    final parsed = double.tryParse(text) ?? 0.0;
+    _notifier.setAmount(parsed, text);
+    setState(() => _isEditingAmount = false);
+  }
+
+  void _cancelAmountEdit() {
+    setState(() => _isEditingAmount = false);
   }
 
   // ── Receipt photo ──────────────────────────────────────────────────────────
@@ -345,8 +369,12 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
                         ambient: _ambient,
                         colorScheme: colorScheme,
                         isDark: isDark,
-                        onTapAmount: () =>
-                            _openAmountDialog(colorScheme, isDark),
+                        isEditingAmount: _isEditingAmount,
+                        amountController: _amountEditController,
+                        amountFocus: _amountEditFocus,
+                        onTapAmount: _startEditingAmount,
+                        onCommitAmount: _commitAmountEdit,
+                        onCancelAmount: _cancelAmountEdit,
                       ),
                       0.04, 0.28,
                     ),
@@ -531,7 +559,12 @@ class _HeroSection extends StatelessWidget {
     required this.ambient,
     required this.colorScheme,
     required this.isDark,
+    required this.isEditingAmount,
+    required this.amountController,
+    required this.amountFocus,
     required this.onTapAmount,
+    required this.onCommitAmount,
+    required this.onCancelAmount,
   });
 
   final Group group;
@@ -541,13 +574,17 @@ class _HeroSection extends StatelessWidget {
   final AnimationController ambient;
   final ColorScheme colorScheme;
   final bool isDark;
+  final bool isEditingAmount;
+  final TextEditingController amountController;
+  final FocusNode amountFocus;
   final VoidCallback onTapAmount;
+  final VoidCallback onCommitAmount;
+  final VoidCallback onCancelAmount;
 
   String get _display {
     if (amount <= 0 && rawText.isEmpty) return '0';
     if (amount <= 0) return rawText;
-    final s = amount.toStringAsFixed(2);
-    return s.endsWith('.00') ? s.substring(0, s.length - 3) : s;
+    return AppConstants.formatCurrency(amount);
   }
 
   @override
@@ -571,9 +608,6 @@ class _HeroSection extends StatelessWidget {
       ],
       stops: const [0.0, 0.35, 0.7, 1.0],
     );
-    // Primary glow shadow from the design system, pulsed by the ambient anim.
-    final baseGlow =
-        isDark ? AppShadows.primaryGlowDark : AppShadows.primaryGlowLight;
     final onPrimary = colorScheme.onPrimary;
 
     return Column(
@@ -611,13 +645,23 @@ class _HeroSection extends StatelessWidget {
 
         // ── Single card with amount left + image top-right ───────────
         SizedBox(
-          height: 140,
+            height: 140,
           child: AnimatedBuilder(
             animation: ambient,
             builder: (_, child) {
               final t = ambient.value;
-              final sheen = -0.6 + 2.2 * t;
-              final pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t);
+              // Pulsing glow shadow — breathes like the home screen card.
+              final pulse = (1 - math.cos(math.pi * 2 * t)) * 0.5;
+              final glowAlpha = isDark
+                  ? (0.12 + 0.15 * pulse)
+                  : (0.15 + 0.30 * pulse);
+              final glowBlur = isDark ? (20 + 16 * pulse) : (16 + 12 * pulse);
+              final glowSpread = isDark ? (1 + pulse) : (2 + 2 * pulse);
+              // Shimmer sweep position.
+              final shimmer = (t * 1.6 - 0.3).clamp(-0.5, 1.5);
+              // Pulsing blob scale.
+              final blobScale = 0.85 + 0.15 * ((1 - math.cos(math.pi * 2 * t)) * 0.5);
+
               return Container(
                 height: double.infinity,
                 decoration: BoxDecoration(
@@ -629,52 +673,70 @@ class _HeroSection extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: baseGlow.first.color
-                          .withValues(alpha: 0.6 + 0.4 * pulse),
-                      blurRadius: baseGlow.first.blurRadius + 14 * pulse,
-                      offset: baseGlow.first.offset,
+                      color: colorScheme.primary.withValues(alpha: glowAlpha),
+                      blurRadius: glowBlur,
+                      spreadRadius: glowSpread,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Top inner highlight for glass-like depth.
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: 1,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              onPrimary.withValues(alpha: 0.0),
-                              onPrimary.withValues(alpha: 0.35),
-                              onPrimary.withValues(alpha: 0.0),
-                            ],
-                            stops: const [0.0, 0.5, 1.0],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Sheen sweep.
+                    // ── Clipped overlay layer (blob + shimmer) ───────
                     Positioned.fill(
                       child: ClipRRect(
                         borderRadius: AppRadius.radiusXxl,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment(sheen, -1.0),
-                              end: Alignment(sheen + 0.35, 1.0),
-                              colors: [
-                                onPrimary.withValues(alpha: 0.0),
-                                onPrimary.withValues(alpha: 0.06),
-                                onPrimary.withValues(alpha: 0.0),
-                              ],
-                              stops: const [0.0, 0.5, 1.0],
+                        child: Stack(
+                          clipBehavior: Clip.hardEdge,
+                          children: [
+                            // Pulsing glow blob (top-right).
+                            Positioned(
+                              right: -34,
+                              top: -34,
+                              child: Transform.scale(
+                                scale: blobScale,
+                                child: Container(
+                                  width: 180,
+                                  height: 180,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: onPrimary.withValues(
+                                      alpha: isDark ? 0.07 : 0.18,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                            // Top inner highlight for glass-like depth.
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              height: 1,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      onPrimary.withValues(alpha: 0.0),
+                                      onPrimary.withValues(alpha: 0.35),
+                                      onPrimary.withValues(alpha: 0.0),
+                                    ],
+                                    stops: const [0.0, 0.5, 1.0],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Shimmer sweep (diagonal light band).
+                            Positioned.fill(
+                              child: CustomPaint(
+                                painter: _HeroShimmerPainter(
+                                  progress: shimmer,
+                                  color: onPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -711,93 +773,140 @@ class _HeroSection extends StatelessWidget {
                             'Total Amount',
                             style: AppTextStyles.labelSmall.copyWith(
                               color: onPrimary.withValues(alpha: 0.70),
+                              fontSize: 12,
                               letterSpacing: 0.5,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xs),
-                      // Amount display.
+                      // Amount display — becomes editable in place when tapped.
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
                         children: [
                           Text(
                             '${AppConstants.currencySymbol} ',
-                            style: AppTextStyles.titleLarge.copyWith(
+                            style: AppTextStyles.bodyMedium.copyWith(
                               color: onPrimary.withValues(alpha: 0.90),
                               fontWeight: FontWeight.w600,
                               height: 1.1,
                             ),
                           ),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 360),
-                            transitionBuilder: (child, anim) =>
-                                FadeTransition(
-                              opacity: anim,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0, 0.35),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: anim,
-                                    curve: Curves.easeOutCubic,
+                          // When editing, show a borderless TextField that
+                          // looks identical to the static text — only the
+                          // cursor appears. Otherwise show the animated text.
+                          isEditingAmount
+                              ? Flexible(
+                                  child: TextField(
+                                    controller: amountController,
+                                    focusNode: amountFocus,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                    inputFormatters: [
+                                      SouthAsianCurrencyInputFormatter(),
+                                    ],
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: onPrimary,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.0,
+                                    ),
+                                    cursorColor: onPrimary,
+                                    textInputAction: TextInputAction.done,
+                                    maxLines: 1,
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      isCollapsed: true,
+                                      border: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
+                                      focusedErrorBorder: InputBorder.none,
+                                      filled: false,
+                                      fillColor: Colors.transparent,
+                                    ),
+                                    onSubmitted: (_) => onCommitAmount(),
+                                  ),
+                                )
+                              : AnimatedSwitcher(
+                                  duration:
+                                      const Duration(milliseconds: 360),
+                                  transitionBuilder: (child, anim) =>
+                                      FadeTransition(
+                                    opacity: anim,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0, 0.35),
+                                        end: Offset.zero,
+                                      ).animate(
+                                        CurvedAnimation(
+                                          parent: anim,
+                                          curve: Curves.easeOutCubic,
+                                        ),
+                                      ),
+                                      child: child,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _display,
+                                    key: ValueKey(_display),
+                                    style:
+                                        AppTextStyles.bodyMedium.copyWith(
+                                      color: onPrimary,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.0,
+                                    ),
                                   ),
                                 ),
-                                child: child,
-                              ),
-                            ),
-                            child: Text(
-                              _display,
-                              key: ValueKey(_display),
-                              style: AppTextStyles.amountLarge.copyWith(
-                                color: onPrimary,
-                                height: 1.0,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      // Enter amount pill button.
-                      _AnimatedTapScale(
-                        onTap: onTapAmount,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md + 2,
-                            vertical: AppSpacing.xs + 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: onPrimary.withValues(alpha: 0.15),
-                            borderRadius: AppRadius.radiusFull,
-                            border: Border.all(
-                              color: onPrimary.withValues(alpha: 0.30),
-                              width: 1.0,
+                      if (!isEditingAmount) ...[
+                        const SizedBox(height: AppSpacing.xs + 2),
+                        // Enter amount pill button.
+                        _AnimatedTapScale(
+                          onTap: onTapAmount,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm + 2,
+                              vertical: AppSpacing.xs,
+                            ),
+                            decoration: BoxDecoration(
+                              color: onPrimary.withValues(alpha: 0.15),
+                              borderRadius: AppRadius.radiusFull,
+                              border: Border.all(
+                                color: onPrimary.withValues(alpha: 0.30),
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  amount > 0
+                                      ? 'Change amount'
+                                      : 'Enter amount',
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                    color: onPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.1,
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.xs + 1),
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 13,
+                                  color: onPrimary,
+                                ),
+                              ],
                             ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                amount > 0 ? 'Change amount' : 'Enter amount',
-                                style: AppTextStyles.labelLarge.copyWith(
-                                  color: onPrimary,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.1,
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Icon(
-                                Icons.arrow_forward_rounded,
-                                size: 15,
-                                color: onPrimary,
-                              ),
-                            ],
-                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -830,16 +939,92 @@ class _HeroSection extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Hero illustration — bigger, top-right positioned, no animation
+// Hero shimmer painter — paints a soft diagonal light band that sweeps across
+// the amount card.  Same technique as the home screen financial summary card.
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _HeroIllustration extends StatelessWidget {
+class _HeroShimmerPainter extends CustomPainter {
+  _HeroShimmerPainter({required this.progress, required this.color});
+
+  /// 0 = far left, 1 = far right.  Values outside [0, 1] keep the band
+  /// off-card so the sweep fades in/out naturally.
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final width = size.width;
+    final height = size.height;
+
+    // The band is ~25% of the card width.
+    final bandWidth = width * 0.25;
+    final centerX = progress * width;
+
+    final rect = Rect.fromCenter(
+      center: Offset(centerX, height / 2),
+      width: bandWidth,
+      height: height * 1.5,
+    );
+
+    final paint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          color.withValues(alpha: 0.0),
+          color.withValues(alpha: 0.12),
+          color.withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(rect);
+
+    canvas.save();
+    canvas.rotate(0.15); // slight diagonal tilt
+    canvas.drawRect(rect, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_HeroShimmerPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
+// Hero illustration — bigger, top-right positioned, with pulsing glow disc.
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _HeroIllustration extends StatefulWidget {
   const _HeroIllustration();
+
+  @override
+  State<_HeroIllustration> createState() => _HeroIllustrationState();
+}
+
+class _HeroIllustrationState extends State<_HeroIllustration>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _glow = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _glow.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final glowColor = isDark ? AppColors.darkPrimary : AppColors.lightPrimary;
+
     return SizedBox(
       width: 250,
       height: 250,
@@ -847,22 +1032,37 @@ class _HeroIllustration extends StatelessWidget {
         alignment: Alignment.center,
         clipBehavior: Clip.none,
         children: [
-          // Soft static glow disc behind the image.
-          Container(
-            width: 160,
-            height: 160,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: glowColor.withValues(alpha: 0.28),
-                  blurRadius: 60,
-                  spreadRadius: 12,
+          // ── Pulsing glow disc behind the image ────────────────
+          // Scales 0.85 → 1.05 and varies alpha + blur for a
+          // breathing effect that makes the illustration feel alive.
+          AnimatedBuilder(
+            animation: _glow,
+            builder: (_, child) {
+              final t = _glow.value;
+              final scale = 0.85 + 0.20 * t;
+              final alpha = 0.18 + 0.22 * t;
+              final blur = 40 + 30 * t;
+              final spread = 6 + 12 * t;
+              return Transform.scale(
+                scale: scale,
+                child: Container(
+                  width: 160,
+                  height: 160,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: glowColor.withValues(alpha: alpha),
+                        blurRadius: blur,
+                        spreadRadius: spread,
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
-          // The illustration itself — bigger and completely static.
+          // The illustration itself — completely static.
           Image.asset(
             'assets/images/bill_and_coins.png',
             width: 240,
@@ -1892,10 +2092,33 @@ class _FilledInfoRowState extends State<_FilledInfoRow>
 // Split section header
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _SplitSectionHeader extends StatelessWidget {
+class _SplitSectionHeader extends StatefulWidget {
   const _SplitSectionHeader({required this.colorScheme});
 
   final ColorScheme colorScheme;
+
+  @override
+  State<_SplitSectionHeader> createState() => _SplitSectionHeaderState();
+}
+
+class _SplitSectionHeaderState extends State<_SplitSectionHeader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _arrow;
+
+  @override
+  void initState() {
+    super.initState();
+    _arrow = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _arrow.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1904,15 +2127,25 @@ class _SplitSectionHeader extends StatelessWidget {
         Text(
           'How do you want to split?',
           style: AppTextStyles.titleSmall.copyWith(
-            color: colorScheme.onSurface,
+            color: widget.colorScheme.onSurface,
             fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(width: AppSpacing.sm),
-        Icon(
-          Icons.arrow_forward_rounded,
-          size: 18,
-          color: colorScheme.primary,
+        AnimatedBuilder(
+          animation: _arrow,
+          builder: (_, child) {
+            final offset = (_arrow.value - 0.5) * 8.0;
+            return Transform.translate(
+              offset: Offset(offset, 0),
+              child: child,
+            );
+          },
+          child: Icon(
+            Icons.arrow_forward_rounded,
+            size: 18,
+            color: widget.colorScheme.primary,
+          ),
         ),
       ],
     );
@@ -2012,7 +2245,11 @@ class _SplitCard extends StatelessWidget {
       opacity: isEnabled ? 1.0 : 0.5,
       child: _AnimatedTapScale(
         onTap: isEnabled ? onTap : null,
-        child: AnimatedContainer(
+        child: AnimatedScale(
+          scale: isSelected ? 1.03 : 1.0,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutBack,
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
           padding: const EdgeInsets.all(AppSpacing.lg),
@@ -2096,6 +2333,7 @@ class _SplitCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
       ),
     );
@@ -2199,7 +2437,7 @@ class _CustomShareRowState extends State<_CustomShareRow> {
     super.initState();
     final initial = widget.participant.customShare;
     _ctrl = TextEditingController(
-      text: initial > 0 ? initial.toStringAsFixed(2) : '',
+      text: initial > 0 ? AppConstants.formatCurrency(initial) : '',
     );
   }
 
@@ -2234,12 +2472,12 @@ class _CustomShareRowState extends State<_CustomShareRow> {
             keyboardType:
                 const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              SouthAsianCurrencyInputFormatter(),
             ],
             textAlign: TextAlign.end,
             style: AppTextStyles.titleSmall.copyWith(color: cs.onSurface),
             decoration: InputDecoration(
-              hintText: '0.00',
+              hintText: '0',
               prefixText: '${AppConstants.currencySymbol} ',
               prefixStyle: AppTextStyles.labelSmall.copyWith(
                 color: cs.onSurfaceVariant,
@@ -2251,7 +2489,8 @@ class _CustomShareRowState extends State<_CustomShareRow> {
               ),
             ),
             onChanged: (v) {
-              final parsed = double.tryParse(v) ?? 0.0;
+              final parsed =
+                  double.tryParse(v.replaceAll(',', '')) ?? 0.0;
               widget.onChanged(parsed);
             },
           ),
@@ -2331,6 +2570,7 @@ class _MembersSection extends StatelessWidget {
                 colorScheme: colorScheme,
                 isDark: isDark,
                 onRemove: () => onToggle(p.id),
+                index: i,
               );
             },
           ),
@@ -2348,24 +2588,77 @@ class _MembersSection extends StatelessWidget {
   }
 }
 
-class _ParticipantAvatar extends StatelessWidget {
+class _ParticipantAvatar extends StatefulWidget {
   const _ParticipantAvatar({
     required this.participant,
     required this.colorScheme,
     required this.isDark,
     required this.onRemove,
+    required this.index,
   });
 
   final BillParticipant participant;
   final ColorScheme colorScheme;
   final bool isDark;
   final VoidCallback onRemove;
+  final int index;
+
+  @override
+  State<_ParticipantAvatar> createState() => _ParticipantAvatarState();
+}
+
+class _ParticipantAvatarState extends State<_ParticipantAvatar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrance;
+  late final Animation<double> _scaleAnim;
+  late final Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    // Stagger each avatar by its index.
+    final start = (widget.index * 0.06).clamp(0.0, 0.4);
+    _scaleAnim = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entrance,
+        curve: Interval(start, start + 0.6, curve: Curves.easeOutBack),
+      ),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _entrance,
+      curve: Interval(start, start + 0.4, curve: Curves.easeOutCubic),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _entrance.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final included = participant.isIncluded;
+    final included = widget.participant.isIncluded;
 
-    return Column(
+    return AnimatedBuilder(
+      animation: _entrance,
+      builder: (_, child) {
+        return Opacity(
+          opacity: _fadeAnim.value,
+          child: Transform.scale(
+            scale: _scaleAnim.value,
+            child: child,
+          ),
+        );
+      },
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Stack(
@@ -2382,23 +2675,23 @@ class _ParticipantAvatar extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: included
-                        ? colorScheme.primary.withValues(alpha: 0.5)
-                        : colorScheme.outlineVariant,
+                        ? widget.colorScheme.primary.withValues(alpha: 0.5)
+                        : widget.colorScheme.outlineVariant,
                     width: 2,
                   ),
                 ),
                 child: ClipOval(
-                  child: participant.profilePicture != null &&
-                          participant.profilePicture!.isNotEmpty
+                  child: widget.participant.profilePicture != null &&
+                          widget.participant.profilePicture!.isNotEmpty
                       ? Image.network(
-                          participant.profilePicture!,
+                          widget.participant.profilePicture!,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) =>
-                              _AvatarFallback(participant: participant, colorScheme: colorScheme),
+                              _AvatarFallback(participant: widget.participant, colorScheme: widget.colorScheme),
                         )
                       : _AvatarFallback(
-                          participant: participant,
-                          colorScheme: colorScheme,
+                          participant: widget.participant,
+                          colorScheme: widget.colorScheme,
                         ),
                 ),
               ),
@@ -2408,17 +2701,17 @@ class _ParticipantAvatar extends StatelessWidget {
               top: -4,
               right: -4,
               child: _AnimatedTapScale(
-                onTap: onRemove,
+                onTap: widget.onRemove,
                 child: Container(
                   width: 20,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: colorScheme.surface,
+                    color: widget.colorScheme.surface,
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: included
-                          ? colorScheme.outlineVariant
-                          : colorScheme.primary.withValues(alpha: 0.4),
+                          ? widget.colorScheme.outlineVariant
+                          : widget.colorScheme.primary.withValues(alpha: 0.4),
                       width: 1,
                     ),
                     boxShadow: AppShadows.xsLight,
@@ -2427,14 +2720,14 @@ class _ParticipantAvatar extends StatelessWidget {
                     included ? Icons.close : Icons.add,
                     size: 12,
                     color: included
-                        ? colorScheme.onSurfaceVariant
-                        : colorScheme.primary,
+                        ? widget.colorScheme.onSurfaceVariant
+                        : widget.colorScheme.primary,
                   ),
                 ),
               ),
             ),
             // "You" badge.
-            if (participant.isCurrentUser)
+            if (widget.participant.isCurrentUser)
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -2446,13 +2739,13 @@ class _ParticipantAvatar extends StatelessWidget {
                       vertical: 1,
                     ),
                     decoration: BoxDecoration(
-                      color: colorScheme.primary,
+                      color: widget.colorScheme.primary,
                       borderRadius: AppRadius.radiusFull,
                     ),
                     child: Text(
                       'You',
                       style: AppTextStyles.caption.copyWith(
-                        color: colorScheme.onPrimary,
+                        color: widget.colorScheme.onPrimary,
                         fontWeight: FontWeight.w700,
                         fontSize: 9,
                         height: 1.2,
@@ -2465,17 +2758,18 @@ class _ParticipantAvatar extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          participant.isCurrentUser
+          widget.participant.isCurrentUser
               ? 'You'
-              : participant.bestDisplayName.split(' ').first,
+              : widget.participant.bestDisplayName.split(' ').first,
           style: AppTextStyles.caption.copyWith(
-            color: included ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
+            color: included ? widget.colorScheme.onSurface : widget.colorScheme.onSurfaceVariant,
             fontWeight: FontWeight.w500,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
       ],
+    ),
     );
   }
 }
@@ -2509,7 +2803,7 @@ class _AvatarFallback extends StatelessWidget {
 // Exclude from this bill tile
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _ExcludeTile extends StatelessWidget {
+class _ExcludeTile extends StatefulWidget {
   const _ExcludeTile({
     required this.excludedCount,
     required this.colorScheme,
@@ -2523,9 +2817,36 @@ class _ExcludeTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_ExcludeTile> createState() => _ExcludeTileState();
+}
+
+class _ExcludeTileState extends State<_ExcludeTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final excludedCount = widget.excludedCount;
+    final colorScheme = widget.colorScheme;
+    final isDark = widget.isDark;
+
     return _AnimatedTapScale(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
@@ -2579,20 +2900,30 @@ class _ExcludeTile extends StatelessWidget {
               ),
             ),
             if (excludedCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.15),
-                  borderRadius: AppRadius.radiusFull,
-                ),
-                child: Text(
-                  '$excludedCount',
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.warning,
-                    fontWeight: FontWeight.w700,
+              AnimatedBuilder(
+                animation: _pulse,
+                builder: (_, child) {
+                  final scale = 1.0 + 0.08 * _pulse.value;
+                  return Transform.scale(
+                    scale: scale,
+                    child: child,
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.15),
+                    borderRadius: AppRadius.radiusFull,
+                  ),
+                  child: Text(
+                    '$excludedCount',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.warning,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -2613,7 +2944,7 @@ class _ExcludeTile extends StatelessWidget {
 // Summary card — You pay / Per person
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _SummaryCard extends StatelessWidget {
+class _SummaryCard extends StatefulWidget {
   const _SummaryCard({
     required this.form,
     required this.currentUserId,
@@ -2626,60 +2957,109 @@ class _SummaryCard extends StatelessWidget {
   final ColorScheme colorScheme;
   final bool isDark;
 
+  @override
+  State<_SummaryCard> createState() => _SummaryCardState();
+}
+
+class _SummaryCardState extends State<_SummaryCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
   double get _currentUserShare {
-    final me = form.participants.cast<BillParticipant?>().firstWhere(
+    final me = widget.form.participants.cast<BillParticipant?>().firstWhere(
           (p) => p?.isCurrentUser == true,
           orElse: () => null,
         );
     if (me == null || !me.isIncluded) return 0.0;
-    return form.splitMode == BillSplitMode.equal
-        ? form.perPersonAmount
+    return widget.form.splitMode == BillSplitMode.equal
+        ? widget.form.perPersonAmount
         : me.customShare;
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = widget.colorScheme;
+
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.surface,
+        color: cs.surface,
         borderRadius: AppRadius.radiusXxl,
         border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
+          color: cs.outlineVariant.withValues(alpha: widget.isDark ? 0.3 : 0.5),
         ),
-        boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
+        boxShadow: widget.isDark ? AppShadows.smDark : AppShadows.smLight,
       ),
-      child: IntrinsicHeight(
-        child: Row(
+      child: ClipRRect(
+        borderRadius: AppRadius.radiusXxl,
+        child: Stack(
           children: [
-            // You pay.
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: _SummaryPill(
-                  icon: Icons.person_rounded,
-                  iconColor: colorScheme.primary,
-                  label: 'You pay',
-                  amount: _currentUserShare,
-                  colorScheme: colorScheme,
-                ),
+            IntrinsicHeight(
+              child: Row(
+                children: [
+                  // You pay.
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: _SummaryPill(
+                        icon: Icons.person_rounded,
+                        iconColor: cs.primary,
+                        label: 'You pay',
+                        amount: _currentUserShare,
+                        colorScheme: cs,
+                      ),
+                    ),
+                  ),
+                  VerticalDivider(
+                    width: 1,
+                    color: cs.outlineVariant.withValues(
+                      alpha: widget.isDark ? 0.3 : 0.5,
+                    ),
+                  ),
+                  // Per person.
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: _SummaryPill(
+                        icon: Icons.people_alt_rounded,
+                        iconColor: AppColors.chartBlue,
+                        label: 'Per person',
+                        amount: widget.form.perPersonAmount,
+                        colorScheme: cs,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            VerticalDivider(
-              width: 1,
-              color: colorScheme.outlineVariant.withValues(
-                alpha: isDark ? 0.3 : 0.5,
-              ),
-            ),
-            // Per person.
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: _SummaryPill(
-                  icon: Icons.people_alt_rounded,
-                  iconColor: AppColors.chartBlue,
-                  label: 'Per person',
-                  amount: form.perPersonAmount,
-                  colorScheme: colorScheme,
+            // Subtle shimmer sweep across the card.
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment(_shimmer.value * 2.5 - 1.0, -1.0),
+                    end: Alignment(_shimmer.value * 2.5 - 0.5, 1.0),
+                    colors: [
+                      cs.primary.withValues(alpha: 0.0),
+                      cs.primary.withValues(alpha: 0.04),
+                      cs.primary.withValues(alpha: 0.0),
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
                 ),
               ),
             ),
@@ -2708,7 +3088,7 @@ class _SummaryPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final formatted = amount > 0
-        ? '${AppConstants.currencySymbol} ${amount.toStringAsFixed(2)}'
+        ? AppConstants.formatCurrency(amount, withSymbol: true)
         : '${AppConstants.currencySymbol} 0';
 
     return Row(
@@ -2792,6 +3172,8 @@ class _ReviewButton extends StatelessWidget {
           final pulse = canReview
               ? (1 - math.cos(math.pi * 2 * ambient.value)) * 0.5
               : 0.0;
+          // Shimmer sweep position — travels left to right when enabled.
+          final shimmer = canReview ? ambient.value : 0.0;
 
           return AnimatedContainer(
             duration: const Duration(milliseconds: 350),
@@ -2815,7 +3197,32 @@ class _ReviewButton extends StatelessWidget {
                     ]
                   : [],
             ),
-            child: child,
+            child: ClipRRect(
+              borderRadius: AppRadius.radiusXxl,
+              child: Stack(
+                children: [
+                  child!,
+                  // Shimmer sweep — a diagonal light band that travels across.
+                  if (canReview)
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment(shimmer * 2.5 - 1.0, -1.0),
+                            end: Alignment(shimmer * 2.5 - 0.5, 1.0),
+                            colors: [
+                              colorScheme.onPrimary.withValues(alpha: 0.0),
+                              colorScheme.onPrimary.withValues(alpha: 0.12),
+                              colorScheme.onPrimary.withValues(alpha: 0.0),
+                            ],
+                            stops: const [0.0, 0.5, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           );
         },
         child: Padding(
@@ -3483,7 +3890,7 @@ class _ReviewSheet extends StatelessWidget {
                                   ),
                                 ),
                                 Text(
-                                  '${AppConstants.currencySymbol} ${form.amount.toStringAsFixed(2)}',
+                                  AppConstants.formatCurrency(form.amount, withSymbol: true),
                                   style: AppTextStyles.amountMedium.copyWith(
                                     color: colorScheme.onPrimary,
                                   ),
@@ -3748,7 +4155,7 @@ class _ReviewParticipantRow extends StatelessWidget {
             ),
           ),
           Text(
-            '${AppConstants.currencySymbol} ${share.toStringAsFixed(2)}',
+            AppConstants.formatCurrency(share, withSymbol: true),
             style: AppTextStyles.amountSmall.copyWith(
               color: colorScheme.onSurface,
               fontWeight: FontWeight.w700,
@@ -3762,93 +4169,6 @@ class _ReviewParticipantRow extends StatelessWidget {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Amount dialog
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _AmountDialog extends StatelessWidget {
-  const _AmountDialog({
-    required this.controller,
-    required this.colorScheme,
-    required this.isDark,
-    required this.onConfirm,
-  });
-
-  final TextEditingController controller;
-  final ColorScheme colorScheme;
-  final bool isDark;
-  final ValueChanged<String> onConfirm;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.calculate_outlined, color: colorScheme.primary, size: 22),
-          const SizedBox(width: AppSpacing.sm),
-          Text(
-            'Enter Amount',
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
-              fontSize: 20,
-            ),
-          ),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Enter the total bill amount',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-            ],
-            style: AppTextStyles.amountMedium.copyWith(
-              color: colorScheme.onSurface,
-            ),
-            decoration: InputDecoration(
-              prefixText: '${AppConstants.currencySymbol} ',
-              prefixStyle: AppTextStyles.titleMedium.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              hintText: '0.00',
-              hintStyle: AppTextStyles.amountMedium.copyWith(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-              ),
-            ),
-            onSubmitted: (v) {
-              onConfirm(v);
-              Navigator.of(context).pop();
-            },
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            onConfirm(controller.text);
-            Navigator.of(context).pop();
-          },
-          child: const Text('Confirm'),
-        ),
-      ],
-    );
-  }
-}
-
 // ═════════════════════════════════════════════════════════════════════════════
 // Shared small helpers
 // ═════════════════════════════════════════════════════════════════════════════
