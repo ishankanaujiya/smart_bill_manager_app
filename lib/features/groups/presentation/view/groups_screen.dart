@@ -8,7 +8,7 @@ import '../../../../core/widgets/animated_entrance.dart';
 import '../../domain/entities/group.dart';
 import '../state/group_providers.dart';
 import 'create_group_screen.dart';
-import '../../../expenses/presentation/view/create_bill_screen.dart';
+import 'group_details_screen.dart';
 
 /// Groups tab for the app shell.
 ///
@@ -144,7 +144,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                     final uid = ref.read(currentUidProvider) ?? '';
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => CreateBillScreen(
+                        builder: (_) => GroupDetailsScreen(
                           group: group,
                           currentUserId: uid,
                         ),

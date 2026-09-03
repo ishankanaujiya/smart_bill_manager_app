@@ -3768,7 +3768,7 @@ class _ExcludeParticipantTile extends StatelessWidget {
 // Review bottom sheet
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _ReviewSheet extends StatelessWidget {
+class _ReviewSheet extends StatefulWidget {
   const _ReviewSheet({
     required this.form,
     required this.group,
@@ -3783,7 +3783,29 @@ class _ReviewSheet extends StatelessWidget {
   final String currentUserId;
   final ColorScheme colorScheme;
   final bool isDark;
-  final VoidCallback onConfirm;
+  final Future<void> Function() onConfirm;
+
+  @override
+  State<_ReviewSheet> createState() => _ReviewSheetState();
+}
+
+class _ReviewSheetState extends State<_ReviewSheet> {
+  bool _isLoading = false;
+
+  Future<void> _handleConfirm() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      await widget.onConfirm();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  CreateBillFormState get form => widget.form;
+  Group get group => widget.group;
+  ColorScheme get colorScheme => widget.colorScheme;
+  bool get isDark => widget.isDark;
 
   String _formatDate(DateTime d) {
     const months = [
@@ -4094,13 +4116,15 @@ class _ReviewSheet extends StatelessWidget {
 
                   // Confirm button.
                   _AnimatedTapScale(
-                    onTap: onConfirm,
+                    onTap: _isLoading ? null : _handleConfirm,
                     child: Container(
                       width: double.infinity,
                       height: 58,
                       decoration: BoxDecoration(
-                        color: colorScheme.primary,
-                        borderRadius: AppRadius.radiusXxl,
+                        color: _isLoading
+                            ? colorScheme.primary.withValues(alpha: 0.6)
+                            : colorScheme.primary,
+                        borderRadius: AppRadius.button,
                         boxShadow: [
                           BoxShadow(
                             color: colorScheme.primary.withValues(alpha: 0.3),
@@ -4112,14 +4136,26 @@ class _ReviewSheet extends StatelessWidget {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            Icons.check_circle_outline_rounded,
-                            color: colorScheme.onPrimary,
-                            size: 22,
-                          ),
+                          if (_isLoading)
+                            SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: colorScheme.onPrimary,
+                              ),
+                            )
+                          else ...[
+                            Icon(
+                              Icons.check_circle_outline_rounded,
+                              color: colorScheme.onPrimary,
+                              size: 22,
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                          ],
                           const SizedBox(width: AppSpacing.sm),
                           Text(
-                            'Create Bill',
+                            _isLoading ? 'Creating...' : 'Create Bill',
                             style: AppTextStyles.labelLarge.copyWith(
                               color: colorScheme.onPrimary,
                               fontWeight: FontWeight.w700,
