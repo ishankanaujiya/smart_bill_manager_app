@@ -344,9 +344,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
           ]
         : [
             BoxShadow(
-              color: Colors.white.withValues(alpha: 0.45),
-              blurRadius: 6,
-              offset: const Offset(-3, -3),
+              color: Color(0xFFFFFFFF),
+              blurRadius: 8,
+              spreadRadius: 8,
+              offset: const Offset(-5, -5),
             ),
             BoxShadow(
               color: Color(0xFF94A3B8).withValues(alpha: 0.18),
