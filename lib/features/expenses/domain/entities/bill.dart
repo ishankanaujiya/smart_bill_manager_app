@@ -7,6 +7,18 @@ enum BillSplitMode {
   custom,
 }
 
+/// The payment state of a bill.
+enum BillPaymentStatus {
+  /// No one has paid yet.
+  unpaid,
+
+  /// Some participants have paid their share.
+  partiallyPaid,
+
+  /// All participants have paid their full share.
+  paid,
+}
+
 /// A single participant's data within a bill.
 ///
 /// This is a lightweight snapshot of the group member's profile at the time
@@ -88,6 +100,9 @@ class BillParticipant {
 ///
 /// This is a pure Dart class with no Flutter or Firebase dependencies so it
 /// can be tested in isolation and will survive infrastructure changes.
+///
+/// In Firestore, each bill is stored as a document inside the
+/// `groups/{groupId}/bills` subcollection.
 class Bill {
   const Bill({
     required this.id,
@@ -100,11 +115,15 @@ class Bill {
     required this.createdBy,
     required this.createdAt,
     this.note,
-    this.receiptPhotoPath,
+    this.receiptPhotoUrl,
     this.date,
+    this.updatedAt,
+    this.paymentStatus = BillPaymentStatus.unpaid,
+    this.realExpenseMadeBy,
+    this.excludedMemberIds = const [],
   });
 
-  /// Locally-generated or Firestore document ID of the bill.
+  /// Firestore document ID of the bill (auto-generated on create).
   final String id;
 
   /// ID of the group this bill belongs to.
@@ -122,8 +141,11 @@ class Bill {
   /// Total monetary amount of the bill.
   final double totalAmount;
 
-  /// Local file path of an optional receipt photo.
-  final String? receiptPhotoPath;
+  /// Cloudinary URL of an optional receipt photo.
+  ///
+  /// This is the remote URL after upload. The local file path is only used
+  /// during creation and is not persisted.
+  final String? receiptPhotoUrl;
 
   /// The date on which the expense occurred. Defaults to [createdAt].
   final DateTime? date;
@@ -137,8 +159,22 @@ class Bill {
   /// Firebase Auth UID of the user who created the bill.
   final String createdBy;
 
-  /// When the bill entity was created locally.
+  /// When the bill entity was created.
   final DateTime createdAt;
+
+  /// When the bill was last updated.
+  final DateTime? updatedAt;
+
+  /// The overall payment status of the bill.
+  final BillPaymentStatus paymentStatus;
+
+  /// The user who actually made the real-world payment for the bill
+  /// (e.g. who paid the restaurant). Stored as a profile snapshot map.
+  /// May be `null` if not specified.
+  final Map<String, dynamic>? realExpenseMadeBy;
+
+  /// UIDs of members excluded from this bill's split.
+  final List<String> excludedMemberIds;
 
   // ── Convenience getters ──────────────────────────────────────────────────
 
@@ -165,6 +201,20 @@ class Bill {
         : participant.customShare;
   }
 
+  /// The split amounts as a list of `{member_id, amount}` maps —
+  /// the shape stored in Firestore as `splitted_amount`.
+  List<Map<String, dynamic>> get splittedAmount {
+    return includedParticipants.map((p) {
+      return {
+        'member_id': p.id,
+        'member_name': p.bestDisplayName,
+        'amount': splitMode == BillSplitMode.equal
+            ? perPersonShare
+            : p.customShare,
+      };
+    }).toList();
+  }
+
   /// Creates a copy of this entity with the given fields replaced.
   Bill copyWith({
     String? id,
@@ -173,12 +223,16 @@ class Bill {
     String? title,
     String? note,
     double? totalAmount,
-    String? receiptPhotoPath,
+    String? receiptPhotoUrl,
     DateTime? date,
     BillSplitMode? splitMode,
     List<BillParticipant>? participants,
     String? createdBy,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    BillPaymentStatus? paymentStatus,
+    Map<String, dynamic>? realExpenseMadeBy,
+    List<String>? excludedMemberIds,
   }) {
     return Bill(
       id: id ?? this.id,
@@ -187,12 +241,16 @@ class Bill {
       title: title ?? this.title,
       note: note ?? this.note,
       totalAmount: totalAmount ?? this.totalAmount,
-      receiptPhotoPath: receiptPhotoPath ?? this.receiptPhotoPath,
+      receiptPhotoUrl: receiptPhotoUrl ?? this.receiptPhotoUrl,
       date: date ?? this.date,
       splitMode: splitMode ?? this.splitMode,
       participants: participants ?? this.participants,
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      realExpenseMadeBy: realExpenseMadeBy ?? this.realExpenseMadeBy,
+      excludedMemberIds: excludedMemberIds ?? this.excludedMemberIds,
     );
   }
 }

@@ -52,6 +52,30 @@ service cloud.firestore {
       // Only group owner/admin can delete.
       allow delete: if request.auth != null
         && request.auth.uid == resource.data.created_by;
+
+
+      // -------------------------
+      // BILLS (subcollection)
+      // -------------------------
+      // Bills live under groups/{groupId}/bills/{billId}.
+      // Any group member can create a bill. Any group member can read,
+      // update, or delete bills. The parent group's membership is checked
+      // via a get() call.
+      match /bills/{billId} {
+        allow read: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.member_ids;
+
+        allow create: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.member_ids
+          && request.resource.data.created_by is map
+          && request.resource.data.created_by.id == request.auth.uid;
+
+        allow update: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.member_ids;
+
+        allow delete: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.member_ids;
+      }
     }
 
 

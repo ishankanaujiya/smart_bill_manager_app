@@ -9,6 +9,7 @@ import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
 import '../../../groups/domain/entities/group.dart';
 import '../../domain/entities/bill.dart';
+import '../state/bill_providers.dart';
 import '../state/create_bill_provider.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -308,31 +309,62 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
         currentUserId: widget.currentUserId,
         colorScheme: colorScheme,
         isDark: isDark,
-        onConfirm: () {
-          final ok = _notifier.createBill(
-            createdBy: widget.currentUserId,
-            groupId: widget.group.id,
-            groupName: widget.group.groupName,
-          );
-          if (ok && mounted) {
-            Navigator.of(context).pop(); // close sheet
-            Navigator.of(context).pop(); // close screen
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Bill created successfully!',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: colorScheme.onPrimary,
-                  ),
-                ),
-                backgroundColor: colorScheme.primary,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        },
+        onConfirm: () => _confirmBillCreation(colorScheme),
       ),
     );
+  }
+
+  /// Builds the [Bill] entity from the form and persists it to Firestore
+  /// via [SaveBillNotifier].
+  Future<void> _confirmBillCreation(ColorScheme colorScheme) async {
+    final bill = _notifier.buildBill(
+      createdBy: widget.currentUserId,
+      groupId: widget.group.id,
+      groupName: widget.group.groupName,
+    );
+    if (bill == null) return;
+
+    final saveNotifier = ref.read(saveBillProvider.notifier);
+    final ok = await saveNotifier.saveBill(
+      bill: bill,
+      receiptPhotoPath: _form.receiptPhotoPath,
+    );
+
+    if (!mounted) return;
+
+    if (ok) {
+      Navigator.of(context).pop(); // close review sheet
+      Navigator.of(context).pop(); // close create bill screen
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Bill created successfully!',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: colorScheme.onPrimary,
+            ),
+          ),
+          backgroundColor: colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      final saveState = ref.read(saveBillProvider);
+      final message = saveState is SaveBillError
+          ? saveState.message
+          : 'Could not create the bill. Please try again.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: colorScheme.onPrimary,
+            ),
+          ),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────

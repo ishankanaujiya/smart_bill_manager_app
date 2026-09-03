@@ -272,34 +272,30 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
 
   /// Validates the form data and, if valid, produces a [Bill] entity.
   ///
-  /// Returns `true` on success (state → [CreateBillSuccess]).
-  /// Returns `false` on validation failure (state stays idle with errors).
-  bool createBill({required String createdBy, required String groupId, required String groupName}) {
+  /// Returns the [Bill] on success, or `null` on validation failure.
+  Bill? buildBill({required String createdBy, required String groupId, required String groupName}) {
     final error = validate();
-    if (error != null) return false;
+    if (error != null) return null;
 
     final now = DateTime.now();
-    // ignore: unused_local_variable
-    final bill = Bill(
-      id: 'bill_${now.millisecondsSinceEpoch}',
+    return Bill(
+      id: '',
       groupId: groupId,
       groupName: groupName,
       title: state.title.trim().isNotEmpty ? state.title.trim() : 'Untitled Bill',
       note: state.note.trim().isEmpty ? null : state.note.trim(),
       totalAmount: state.amount,
-      receiptPhotoPath: state.receiptPhotoPath,
+      receiptPhotoUrl: null, // Set after Cloudinary upload in SaveBillNotifier
       date: state.date ?? now,
       splitMode: state.splitMode,
       participants: state.participants,
       createdBy: createdBy,
       createdAt: now,
+      excludedMemberIds: state.participants
+          .where((p) => !p.isIncluded)
+          .map((p) => p.id)
+          .toList(),
     );
-
-    // Persist to Firestore can be wired here later by injecting a repository.
-    // For now, we surface the Bill entity as a success state so the UI can
-    // display it.
-
-    return true;
   }
 
   void reset() => state = const CreateBillFormState();
