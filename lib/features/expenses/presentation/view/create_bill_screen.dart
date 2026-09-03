@@ -13,6 +13,13 @@ import '../../domain/entities/bill.dart';
 import '../state/create_bill_provider.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Quick Info inline editing field
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Which Quick Info field is currently being edited inline (null = none).
+enum _QuickInfoField { title, note }
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Screen
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -50,6 +57,13 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
   /// Whether a receipt photo is currently being picked.
   bool _isPickingPhoto = false;
 
+  // ── Inline Quick Info editing ────────────────────────────────────────────
+  _QuickInfoField? _editingField;
+  late final TextEditingController _titleEditController = TextEditingController();
+  late final TextEditingController _noteEditController = TextEditingController();
+  late final FocusNode _titleEditFocus = FocusNode();
+  late final FocusNode _noteEditFocus = FocusNode();
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +78,18 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
       duration: const Duration(milliseconds: 3000),
     )..repeat();
 
+    // Commit inline edit when focus is lost.
+    _titleEditFocus.addListener(() {
+      if (!_titleEditFocus.hasFocus && _editingField == _QuickInfoField.title) {
+        _commitQuickInfoEdit();
+      }
+    });
+    _noteEditFocus.addListener(() {
+      if (!_noteEditFocus.hasFocus && _editingField == _QuickInfoField.note) {
+        _commitQuickInfoEdit();
+      }
+    });
+
     _startEntrance();
   }
 
@@ -76,6 +102,10 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
   void dispose() {
     _entrance.dispose();
     _ambient.dispose();
+    _titleEditController.dispose();
+    _noteEditController.dispose();
+    _titleEditFocus.dispose();
+    _noteEditFocus.dispose();
     super.dispose();
   }
 
@@ -148,41 +178,6 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
     }
   }
 
-  // ── Title / Note dialogs ───────────────────────────────────────────────────
-
-  Future<void> _openTitleDialog(ColorScheme colorScheme, bool isDark) async {
-    final controller = TextEditingController(text: _form.title);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => _TextFieldDialog(
-        controller: controller,
-        colorScheme: colorScheme,
-        isDark: isDark,
-        title: 'Add Title',
-        hint: 'e.g. Dinner, Hotel, Taxi',
-        maxLength: AppConstants.billTitleMaxLength,
-        onConfirm: _notifier.setTitle,
-      ),
-    );
-  }
-
-  Future<void> _openNoteDialog(ColorScheme colorScheme, bool isDark) async {
-    final controller = TextEditingController(text: _form.note);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => _TextFieldDialog(
-        controller: controller,
-        colorScheme: colorScheme,
-        isDark: isDark,
-        title: 'Add Note',
-        hint: 'Any additional details…',
-        maxLength: AppConstants.billNoteMaxLength,
-        maxLines: 4,
-        onConfirm: _notifier.setNote,
-      ),
-    );
-  }
-
   // ── Date picker ────────────────────────────────────────────────────────────
 
   Future<void> _openDatePicker() async {
@@ -195,14 +190,64 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
     if (picked != null) _notifier.setDate(picked);
   }
 
+  // ── Inline Quick Info editing ──────────────────────────────────────────────
+
+  void _startEditingQuickInfo(_QuickInfoField field) {
+    setState(() {
+      _editingField = field;
+      switch (field) {
+        case _QuickInfoField.title:
+          _titleEditController.text = _form.title;
+          _titleEditController.selection = TextSelection(
+            baseOffset: _form.title.length,
+            extentOffset: _form.title.length,
+          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _titleEditFocus.requestFocus();
+          });
+        case _QuickInfoField.note:
+          _noteEditController.text = _form.note;
+          _noteEditController.selection = TextSelection(
+            baseOffset: _form.note.length,
+            extentOffset: _form.note.length,
+          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _noteEditFocus.requestFocus();
+          });
+      }
+    });
+  }
+
+  void _commitQuickInfoEdit() {
+    if (_editingField == null) return;
+    final field = _editingField!;
+    setState(() => _editingField = null);
+    switch (field) {
+      case _QuickInfoField.title:
+        _notifier.setTitle(_titleEditController.text.trim());
+      case _QuickInfoField.note:
+        _notifier.setNote(_noteEditController.text.trim());
+    }
+  }
+
+  void _cancelQuickInfoEdit() {
+    setState(() => _editingField = null);
+  }
+
   // ── Exclude picker sheet ───────────────────────────────────────────────────
 
   void _openExcludePicker(ColorScheme colorScheme, bool isDark) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: colorScheme.scrim.withValues(alpha: 0.4),
+      showDragHandle: false,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppRadius.topXxl,
+      ),
       builder: (_) => _ExcludePickerSheet(
-        participants: _form.participants,
+        providerKey: _providerKey,
         colorScheme: colorScheme,
         isDark: isDark,
         onToggle: _notifier.toggleParticipant,
@@ -289,39 +334,21 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: AppSpacing.md),
-                    // ── App bar ──────────────────────────────────────────
-                    _stagger(
-                      _AppBar(
-                        group: widget.group,
-                        colorScheme: colorScheme,
-                        isDark: isDark,
-                        onBack: () => Navigator.of(context).maybePop(),
-                      ),
-                      0.0, 0.14,
-                    ),
                     const SizedBox(height: AppSpacing.xxl),
-                    // ── Hero header ──────────────────────────────────────
+                    // ── Hero section (title outside + amount card) ────────
                     _stagger(
-                      _HeroHeader(
-                        ambient: _ambient,
-                        colorScheme: colorScheme,
-                      ),
-                      0.04, 0.22,
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    // ── Total amount card ────────────────────────────────
-                    _stagger(
-                      _TotalAmountCard(
+                      _HeroSection(
+                        group: widget.group,
                         amount: _form.amount,
                         rawText: _form.rawAmountText,
                         amountError: _form.amountError,
                         ambient: _ambient,
                         colorScheme: colorScheme,
                         isDark: isDark,
-                        onTap: () => _openAmountDialog(colorScheme, isDark),
+                        onTapAmount: () =>
+                            _openAmountDialog(colorScheme, isDark),
                       ),
-                      0.10, 0.28,
+                      0.04, 0.28,
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     // ── Quick info row ───────────────────────────────────
@@ -331,13 +358,47 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
                         colorScheme: colorScheme,
                         isDark: isDark,
                         isPickingPhoto: _isPickingPhoto,
+                        editingField: _editingField,
+                        titleController: _titleEditController,
+                        noteController: _noteEditController,
+                        titleFocus: _titleEditFocus,
+                        noteFocus: _noteEditFocus,
                         onAddPhoto: _pickReceiptPhoto,
-                        onAddTitle: () => _openTitleDialog(colorScheme, isDark),
-                        onAddNote: () => _openNoteDialog(colorScheme, isDark),
+                        onAddTitle: () =>
+                            _startEditingQuickInfo(_QuickInfoField.title),
+                        onAddNote: () =>
+                            _startEditingQuickInfo(_QuickInfoField.note),
                         onSelectDate: _openDatePicker,
+                        onCommitEdit: _commitQuickInfoEdit,
+                        onCancelEdit: _cancelQuickInfoEdit,
                       ),
                       0.18, 0.36,
                     ),
+                    // ── Filled info showcase (below Quick Info) ──────────
+                    if (_form.title.isNotEmpty ||
+                        _form.note.isNotEmpty ||
+                        _form.date != null ||
+                        _form.receiptPhotoPath != null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      _stagger(
+                        _FilledInfoShowcase(
+                          form: _form,
+                          colorScheme: colorScheme,
+                          isDark: isDark,
+                          onEditTitle: () =>
+                              _startEditingQuickInfo(_QuickInfoField.title),
+                          onEditNote: () =>
+                              _startEditingQuickInfo(_QuickInfoField.note),
+                          onEditDate: _openDatePicker,
+                          onEditPhoto: _pickReceiptPhoto,
+                          onRemoveTitle: () => _notifier.setTitle(''),
+                          onRemoveNote: () => _notifier.setNote(''),
+                          onRemoveDate: () => _notifier.clearDate(),
+                          onRemovePhoto: () => _notifier.setReceiptPhoto(null),
+                        ),
+                        0.20, 0.38,
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.xl),
                     // ── Split mode selector ──────────────────────────────
                     _stagger(
@@ -348,6 +409,7 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
                     _stagger(
                       _SplitSelector(
                         splitMode: _form.splitMode,
+                        amount: _form.amount,
                         colorScheme: colorScheme,
                         isDark: isDark,
                         onChanged: _notifier.setSplitMode,
@@ -452,379 +514,311 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
 // App bar
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _AppBar extends StatelessWidget {
-  const _AppBar({
+// ═════════════════════════════════════════════════════════════════════════════
+// Hero section — title/subtitle outside, image + amount inside the card
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Hero section — title/subtitle outside, image + amount in a single card
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _HeroSection extends StatelessWidget {
+  const _HeroSection({
     required this.group,
-    required this.colorScheme,
-    required this.isDark,
-    required this.onBack,
-  });
-
-  final Group group;
-  final ColorScheme colorScheme;
-  final bool isDark;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _AnimatedTapScale(
-          onTap: onBack,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: colorScheme.outlineVariant),
-              boxShadow: isDark ? AppShadows.xsDark : AppShadows.xsLight,
-            ),
-            child: Icon(
-              Icons.close,
-              color: colorScheme.onSurface,
-              size: 20,
-            ),
-          ),
-        ),
-        const Spacer(),
-        // Group member count chip.
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.xs,
-          ),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest,
-            borderRadius: AppRadius.radiusFull,
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-            ),
-            boxShadow: isDark ? AppShadows.xsDark : AppShadows.xsLight,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.people_alt_rounded,
-                size: 16,
-                color: colorScheme.primary,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                '${group.memberCount}',
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Hero header — title + floating bill_and_coins.png
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _HeroHeader extends StatelessWidget {
-  const _HeroHeader({
-    required this.ambient,
-    required this.colorScheme,
-  });
-
-  final AnimationController ambient;
-  final ColorScheme colorScheme;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 120,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // ── Left: title block ──────────────────────────────────────────
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'New Bill',
-                  style: AppTextStyles.headlineMedium.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                RichText(
-                  text: TextSpan(
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    children: [
-                      const TextSpan(text: 'Split expenses. '),
-                      TextSpan(
-                        text: 'Settle stories.',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.underline,
-                          decorationColor: colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                // Decorative pill — group name.
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.xxs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer.withValues(alpha: 0.5),
-                    borderRadius: AppRadius.radiusFull,
-                    border: Border.all(
-                      color: colorScheme.primary.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Text(
-                    context
-                            .findAncestorWidgetOfExactType<CreateBillScreen>()
-                            ?.group
-                            .groupName ??
-                        '',
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // ── Right: floating illustration ───────────────────────────────
-          Positioned(
-            right: -AppSpacing.screenHorizontal,
-            top: -24,
-            child: AnimatedBuilder(
-              animation: ambient,
-              builder: (context, child) {
-                final t = ambient.value;
-                final floatY = math.sin(t * 2 * math.pi) * 6;
-                final floatX = math.sin(t * 2 * math.pi + 1.0) * 2;
-                return Transform.translate(
-                  offset: Offset(floatX, floatY),
-                  child: child,
-                );
-              },
-              child: Image.asset(
-                'assets/images/bill_and_coins.png',
-                width: 160,
-                height: 160,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Total amount card
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _TotalAmountCard extends StatelessWidget {
-  const _TotalAmountCard({
     required this.amount,
     required this.rawText,
     required this.amountError,
     required this.ambient,
     required this.colorScheme,
     required this.isDark,
-    required this.onTap,
+    required this.onTapAmount,
   });
 
+  final Group group;
   final double amount;
   final String rawText;
   final String? amountError;
   final AnimationController ambient;
   final ColorScheme colorScheme;
   final bool isDark;
-  final VoidCallback onTap;
+  final VoidCallback onTapAmount;
 
-  String get _displayAmount {
+  String get _display {
     if (amount <= 0 && rawText.isEmpty) return '0';
     if (amount <= 0) return rawText;
-    // Show up to 2 decimals, strip trailing zeros.
-    final formatted = amount.toStringAsFixed(2);
-    return formatted.endsWith('.00')
-        ? formatted.substring(0, formatted.length - 3)
-        : formatted;
+    final s = amount.toStringAsFixed(2);
+    return s.endsWith('.00') ? s.substring(0, s.length - 3) : s;
   }
 
   @override
   Widget build(BuildContext context) {
-    final gradient = isDark
-        ? AppColors.darkPrimaryGradient
-        : AppColors.lightPrimaryGradient;
+    // Use the design-system gradient endpoints, enriched with intermediate
+    // stops for extra depth. Tokens come from AppColors, not raw hex.
+    final gradientStart = isDark
+        ? AppColors.darkPrimaryGradientStart
+        : AppColors.lightPrimaryGradientStart;
+    final gradientEnd = isDark
+        ? AppColors.darkPrimaryGradientEnd
+        : AppColors.lightPrimaryGradientEnd;
+    final cardGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        gradientEnd,
+        gradientStart,
+        gradientEnd,
+        gradientEnd.withValues(alpha: 0.85),
+      ],
+      stops: const [0.0, 0.35, 0.7, 1.0],
+    );
+    // Primary glow shadow from the design system, pulsed by the ambient anim.
+    final baseGlow =
+        isDark ? AppShadows.primaryGlowDark : AppShadows.primaryGlowLight;
+    final onPrimary = colorScheme.onPrimary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AnimatedBuilder(
-          animation: ambient,
-          builder: (context, child) {
-            final t = ambient.value;
-            final sweepX = -0.3 + 1.6 * t;
-            return Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              decoration: BoxDecoration(
-                borderRadius: AppRadius.radiusXxl,
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: gradient.colors,
+        // ── Title + subtitle (OUTSIDE the card) ──────────────────────
+        Text(
+          'New Bill',
+          style: AppTextStyles.headlineLarge.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.8,
+            height: 1.1,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        RichText(
+          text: TextSpan(
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            children: [
+              const TextSpan(text: 'Split expenses. '),
+              TextSpan(
+                text: 'Settle stories.',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
                 ),
-                boxShadow: isDark
-                    ? AppShadows.primaryGlowDark
-                    : AppShadows.primaryGlowLight,
               ),
-              child: Stack(
-                children: [
-                  // Ambient sheen sweep.
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: AppRadius.radiusXxl,
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+
+        // ── Single card with amount left + image top-right ───────────
+        SizedBox(
+          height: 140,
+          child: AnimatedBuilder(
+            animation: ambient,
+            builder: (_, child) {
+              final t = ambient.value;
+              final sheen = -0.6 + 2.2 * t;
+              final pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t);
+              return Container(
+                height: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: cardGradient,
+                  borderRadius: AppRadius.radiusXxl,
+                  border: Border.all(
+                    color: onPrimary.withValues(alpha: 0.15),
+                    width: 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: baseGlow.first.color
+                          .withValues(alpha: 0.6 + 0.4 * pulse),
+                      blurRadius: baseGlow.first.blurRadius + 14 * pulse,
+                      offset: baseGlow.first.offset,
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Top inner highlight for glass-like depth.
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 1,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            begin: Alignment(sweepX, -0.8),
-                            end: Alignment(sweepX + 0.4, 0.8),
                             colors: [
-                              Colors.white.withValues(alpha: 0.0),
-                              Colors.white.withValues(alpha: isDark ? 0.06 : 0.10),
-                              Colors.white.withValues(alpha: 0.0),
+                              onPrimary.withValues(alpha: 0.0),
+                              onPrimary.withValues(alpha: 0.35),
+                              onPrimary.withValues(alpha: 0.0),
                             ],
                             stops: const [0.0, 0.5, 1.0],
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  child!,
-                ],
-              ),
-            );
-          },
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Total Amount',
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color: colorScheme.onPrimary.withValues(alpha: 0.8),
-                        letterSpacing: 0.3,
+                    // Sheen sweep.
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: AppRadius.radiusXxl,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment(sheen, -1.0),
+                              end: Alignment(sheen + 0.35, 1.0),
+                              colors: [
+                                onPrimary.withValues(alpha: 0.0),
+                                onPrimary.withValues(alpha: 0.06),
+                                onPrimary.withValues(alpha: 0.0),
+                              ],
+                              stops: const [0.0, 0.5, 1.0],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          '${AppConstants.currencySymbol} ',
-                          style: AppTextStyles.titleLarge.copyWith(
-                            color: colorScheme.onPrimary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          transitionBuilder: (child, anim) => FadeTransition(
-                            opacity: anim,
-                            child: SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, 0.3),
-                                end: Offset.zero,
-                              ).animate(anim),
-                              child: child,
-                            ),
-                          ),
-                          child: Text(
-                            _displayAmount,
-                            key: ValueKey(_displayAmount),
-                            style: AppTextStyles.amountLarge.copyWith(
-                              color: colorScheme.onPrimary,
-                              height: 1.0,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                    child!,
                   ],
                 ),
-              ),
-              // Edit button.
-              _AnimatedTapScale(
-                onTap: onTap,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: AppSpacing.sm,
+              );
+            },
+            child: Stack(
+              clipBehavior: Clip.none,
+              fit: StackFit.expand,
+              children: [
+                // ── Amount content + Enter amount pill ─────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xxl, AppSpacing.lg, 160, AppSpacing.lg,
                   ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.onPrimary.withValues(alpha: 0.2),
-                    borderRadius: AppRadius.radiusFull,
-                    border: Border.all(
-                      color: colorScheme.onPrimary.withValues(alpha: 0.15),
-                    ),
-                  ),
-                  child: Row(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        'Enter amount',
-                        style: AppTextStyles.labelMedium.copyWith(
-                          color: colorScheme.onPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      // "Total Amount" label with icon.
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.account_balance_wallet_rounded,
+                            size: 13,
+                            color: onPrimary.withValues(alpha: 0.70),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Total Amount',
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: onPrimary.withValues(alpha: 0.70),
+                              letterSpacing: 0.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Icon(
-                        Icons.edit_rounded,
-                        size: 16,
-                        color: colorScheme.onPrimary,
+                      const SizedBox(height: AppSpacing.xs),
+                      // Amount display.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            '${AppConstants.currencySymbol} ',
+                            style: AppTextStyles.titleLarge.copyWith(
+                              color: onPrimary.withValues(alpha: 0.90),
+                              fontWeight: FontWeight.w600,
+                              height: 1.1,
+                            ),
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 360),
+                            transitionBuilder: (child, anim) =>
+                                FadeTransition(
+                              opacity: anim,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.35),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: anim,
+                                    curve: Curves.easeOutCubic,
+                                  ),
+                                ),
+                                child: child,
+                              ),
+                            ),
+                            child: Text(
+                              _display,
+                              key: ValueKey(_display),
+                              style: AppTextStyles.amountLarge.copyWith(
+                                color: onPrimary,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      // Enter amount pill button.
+                      _AnimatedTapScale(
+                        onTap: onTapAmount,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md + 2,
+                            vertical: AppSpacing.xs + 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: onPrimary.withValues(alpha: 0.15),
+                            borderRadius: AppRadius.radiusFull,
+                            border: Border.all(
+                              color: onPrimary.withValues(alpha: 0.30),
+                              width: 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                amount > 0 ? 'Change amount' : 'Enter amount',
+                                style: AppTextStyles.labelLarge.copyWith(
+                                  color: onPrimary,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 15,
+                                color: onPrimary,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ],
+                // ── Large illustration, top-right, overlapping ──
+                const Positioned(
+                  top: -110,
+                  right: -35,
+                  child: _HeroIllustration(),
+                ),
+              ],
+            ),
           ),
         ),
+
+        // ── Amount validation error ───────────────────────────────────
         if (amountError != null)
           Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.sm, left: AppSpacing.xs),
+            padding: const EdgeInsets.only(
+              top: AppSpacing.sm,
+              left: AppSpacing.xs,
+            ),
             child: _InlineError(
               message: amountError!,
               colorScheme: colorScheme,
@@ -836,11 +830,264 @@ class _TotalAmountCard extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Hero illustration — bigger, top-right positioned, no animation
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _HeroIllustration extends StatelessWidget {
+  const _HeroIllustration();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glowColor = isDark ? AppColors.darkPrimary : AppColors.lightPrimary;
+    return SizedBox(
+      width: 250,
+      height: 250,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          // Soft static glow disc behind the image.
+          Container(
+            width: 160,
+            height: 160,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: glowColor.withValues(alpha: 0.28),
+                  blurRadius: 60,
+                  spreadRadius: 12,
+                ),
+              ],
+            ),
+          ),
+          // The illustration itself — bigger and completely static.
+          Image.asset(
+            'assets/images/bill_and_coins.png',
+            width: 240,
+            height: 240,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+          // Static decorative sparkle dots (scaled up).
+          const _StaticSparkle(right: 20, top: 38, size: 9),
+          const _StaticSparkle(left: 14, top: 88, size: 7),
+          const _StaticSparkle(right: 22, bottom: 48, size: 8),
+          const _StaticSparkle(left: 30, bottom: 32, size: 6),
+          const _StaticSparkle(right: 52, bottom: 78, size: 6.5),
+          const _StaticSparkle(left: 50, top: 28, size: 5),
+        ],
+      ),
+    );
+  }
+}
+
+/// A static cross-shaped sparkle at a fixed opacity — no animation.
+class _StaticSparkle extends StatelessWidget {
+  const _StaticSparkle({
+    this.right,
+    this.left,
+    this.top,
+    this.bottom,
+    required this.size,
+  });
+
+  final double? right;
+  final double? left;
+  final double? top;
+  final double? bottom;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: right,
+      left: left,
+      top: top,
+      bottom: bottom,
+      child: Opacity(
+        opacity: 0.55,
+        child: CustomPaint(
+          size: Size(size, size),
+          painter: _CrossPainter(
+            color: Colors.white,
+            strokeWidth: size * 0.28,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CrossPainter extends CustomPainter {
+  const _CrossPainter({required this.color, required this.strokeWidth});
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(size.width / 2, 0),
+      Offset(size.width / 2, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(0, size.height / 2),
+      Offset(size.width, size.height / 2),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_CrossPainter old) =>
+      old.color != color || old.strokeWidth != strokeWidth;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Quick info row — Photo / Title / Note / Date
+// Supports inline editing: tapping Title or Note hides all chips and shows
+// an animated TextField inside the same card.
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _QuickInfoRow extends StatelessWidget {
   const _QuickInfoRow({
+    required this.form,
+    required this.colorScheme,
+    required this.isDark,
+    required this.isPickingPhoto,
+    required this.editingField,
+    required this.titleController,
+    required this.noteController,
+    required this.titleFocus,
+    required this.noteFocus,
+    required this.onAddPhoto,
+    required this.onAddTitle,
+    required this.onAddNote,
+    required this.onSelectDate,
+    required this.onCommitEdit,
+    required this.onCancelEdit,
+  });
+
+  final CreateBillFormState form;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final bool isPickingPhoto;
+  final _QuickInfoField? editingField;
+  final TextEditingController titleController;
+  final TextEditingController noteController;
+  final FocusNode titleFocus;
+  final FocusNode noteFocus;
+  final VoidCallback onAddPhoto;
+  final VoidCallback onAddTitle;
+  final VoidCallback onAddNote;
+  final VoidCallback onSelectDate;
+  final VoidCallback onCommitEdit;
+  final VoidCallback onCancelEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = editingField != null;
+
+    return Container(
+      padding: AppSpacing.cardPadding,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppRadius.radiusXxl,
+        border: Border.all(
+          color: colorScheme.outlineVariant
+              .withValues(alpha: isDark ? 0.3 : 0.5),
+        ),
+        boxShadow: AppShadows.cardShadow(
+          isDark ? Brightness.dark : Brightness.light,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Quick Info',
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const Spacer(),
+              if (isEditing)
+                _AnimatedTapScale(
+                  onTap: onCancelEdit,
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // ── Animated switch between chips and inline editor ──
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            reverseDuration: const Duration(milliseconds: 250),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, anim) {
+              return FadeTransition(
+                opacity: anim,
+                child: SizeTransition(
+                  sizeFactor: anim,
+                  axisAlignment: 0.0,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.15),
+                      end: Offset.zero,
+                    ).animate(anim),
+                    child: child,
+                  ),
+                ),
+              );
+            },
+            child: isEditing
+                ? _InlineEditor(
+                    key: const ValueKey('inline-editor'),
+                    field: editingField!,
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    titleController: titleController,
+                    noteController: noteController,
+                    titleFocus: titleFocus,
+                    noteFocus: noteFocus,
+                    onDone: onCommitEdit,
+                  )
+                : _QuickInfoChips(
+                    key: const ValueKey('chips'),
+                    form: form,
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    isPickingPhoto: isPickingPhoto,
+                    onAddPhoto: onAddPhoto,
+                    onAddTitle: onAddTitle,
+                    onAddNote: onAddNote,
+                    onSelectDate: onSelectDate,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Chips row (4 options) ────────────────────────────────────────────────────
+
+class _QuickInfoChips extends StatelessWidget {
+  const _QuickInfoChips({
+    super.key,
     required this.form,
     required this.colorScheme,
     required this.isDark,
@@ -865,86 +1112,60 @@ class _QuickInfoRow extends StatelessWidget {
     final date = form.date;
     final dateLabel = date != null ? _formatDate(date) : 'Select Date';
 
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: AppRadius.radiusXxl,
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _QuickInfoChip(
+          icon: isPickingPhoto
+              ? Icons.hourglass_top_rounded
+              : (form.receiptPhotoPath != null
+                  ? Icons.check_circle_rounded
+                  : Icons.camera_alt_outlined),
+          label: 'Add Photo',
+          sublabel: form.receiptPhotoPath != null ? 'Attached' : 'Upload bill',
+          color: AppColors.chartOrange,
+          isDone: form.receiptPhotoPath != null,
+          colorScheme: colorScheme,
+          isDark: isDark,
+          onTap: onAddPhoto,
         ),
-        boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Quick Info',
-            style: AppTextStyles.labelLarge.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _QuickInfoChip(
-                icon: isPickingPhoto
-                    ? Icons.hourglass_top_rounded
-                    : (form.receiptPhotoPath != null
-                        ? Icons.check_circle_rounded
-                        : Icons.camera_alt_outlined),
-                label: 'Add Photo',
-                sublabel: form.receiptPhotoPath != null
-                    ? 'Attached'
-                    : 'Upload bill image',
-                color: AppColors.chartOrange,
-                isDone: form.receiptPhotoPath != null,
-                colorScheme: colorScheme,
-                isDark: isDark,
-                onTap: onAddPhoto,
-              ),
-              _QuickInfoChip(
-                icon: form.title.isNotEmpty
-                    ? Icons.title_rounded
-                    : Icons.title_outlined,
-                label: 'Add Title',
-                sublabel: form.title.isNotEmpty ? form.title : "What's this for?",
-                color: AppColors.chartBlue,
-                isDone: form.title.isNotEmpty,
-                colorScheme: colorScheme,
-                isDark: isDark,
-                onTap: onAddTitle,
-              ),
-              _QuickInfoChip(
-                icon: form.note.isNotEmpty
-                    ? Icons.sticky_note_2_rounded
-                    : Icons.sticky_note_2_outlined,
-                label: 'Add Note',
-                sublabel: form.note.isNotEmpty ? 'Added' : 'Any details?',
-                color: AppColors.chartPurple,
-                isDone: form.note.isNotEmpty,
-                colorScheme: colorScheme,
-                isDark: isDark,
-                onTap: onAddNote,
-              ),
-              _QuickInfoChip(
-                icon: form.date != null
-                    ? Icons.event_available_rounded
-                    : Icons.calendar_today_outlined,
-                label: dateLabel,
-                sublabel: form.date != null ? 'Set' : 'When was this?',
-                color: AppColors.chartPurple.withValues(alpha: 0.7),
-                isDone: form.date != null,
-                colorScheme: colorScheme,
-                isDark: isDark,
-                onTap: onSelectDate,
-              ),
-            ],
-          ),
-        ],
-      ),
+        _QuickInfoChip(
+          icon: form.title.isNotEmpty
+              ? Icons.title_rounded
+              : Icons.title_outlined,
+          label: 'Add Title',
+          sublabel: form.title.isNotEmpty ? 'Added' : "What's this for?",
+          color: AppColors.chartBlue,
+          isDone: form.title.isNotEmpty,
+          colorScheme: colorScheme,
+          isDark: isDark,
+          onTap: onAddTitle,
+        ),
+        _QuickInfoChip(
+          icon: form.note.isNotEmpty
+              ? Icons.sticky_note_2_rounded
+              : Icons.sticky_note_2_outlined,
+          label: 'Add Note',
+          sublabel: form.note.isNotEmpty ? 'Added' : 'Any details?',
+          color: AppColors.chartPurple,
+          isDone: form.note.isNotEmpty,
+          colorScheme: colorScheme,
+          isDark: isDark,
+          onTap: onAddNote,
+        ),
+        _QuickInfoChip(
+          icon: form.date != null
+              ? Icons.event_available_rounded
+              : Icons.calendar_today_outlined,
+          label: dateLabel,
+          sublabel: form.date != null ? 'Set' : 'When was this?',
+          color: AppColors.chartPurple.withValues(alpha: 0.7),
+          isDone: form.date != null,
+          colorScheme: colorScheme,
+          isDark: isDark,
+          onTap: onSelectDate,
+        ),
+      ],
     );
   }
 
@@ -954,6 +1175,161 @@ class _QuickInfoRow extends StatelessWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[d.month - 1]} ${d.day}';
+  }
+}
+
+// ── Inline editor (shown when a field is being edited) ──────────────────────
+
+class _InlineEditor extends StatelessWidget {
+  const _InlineEditor({
+    super.key,
+    required this.field,
+    required this.colorScheme,
+    required this.isDark,
+    required this.titleController,
+    required this.noteController,
+    required this.titleFocus,
+    required this.noteFocus,
+    required this.onDone,
+  });
+
+  final _QuickInfoField field;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final TextEditingController titleController;
+  final TextEditingController noteController;
+  final FocusNode titleFocus;
+  final FocusNode noteFocus;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final isTitle = field == _QuickInfoField.title;
+    final controller = isTitle ? titleController : noteController;
+    final focus = isTitle ? titleFocus : noteFocus;
+    final icon = isTitle ? Icons.title_rounded : Icons.sticky_note_2_rounded;
+    final label = isTitle ? 'Bill Title' : 'Note';
+    final hint = isTitle ? 'e.g. Dinner, Hotel, Taxi' : 'Any additional details…';
+    final color = isTitle ? AppColors.chartBlue : AppColors.chartPurple;
+    final maxLines = isTitle ? 1 : 3;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Label row with icon ──────────────────────────────
+        Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: AppRadius.radiusSm,
+              ),
+              child: Icon(icon, size: 18, color: color),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              label,
+              style: AppTextStyles.labelLarge.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        // ── Text field ───────────────────────────────────────
+        TextField(
+          controller: controller,
+          focusNode: focus,
+          maxLines: maxLines,
+          minLines: 1,
+          textCapitalization: TextCapitalization.sentences,
+          textInputAction: isTitle ? TextInputAction.done : TextInputAction.newline,
+          maxLength: isTitle
+              ? AppConstants.billTitleMaxLength
+              : AppConstants.billNoteMaxLength,
+          onSubmitted: isTitle ? (_) => onDone() : null,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: colorScheme.onSurface,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: AppTextStyles.bodyMedium.copyWith(
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+            counterText: '',
+            filled: true,
+            fillColor: colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.5),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.md,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: AppRadius.input,
+              borderSide: BorderSide(
+                color: color.withValues(alpha: 0.4),
+                width: 1.5,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: AppRadius.input,
+              borderSide: BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: AppRadius.input,
+              borderSide: BorderSide(
+                color: color,
+                width: 2.0,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        // ── Done button ──────────────────────────────────────
+        Align(
+          alignment: Alignment.centerRight,
+          child: _AnimatedTapScale(
+            onTap: onDone,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.sm,
+              ),
+              decoration: BoxDecoration(
+                color: colorScheme.primary,
+                borderRadius: AppRadius.radiusFull,
+                boxShadow: isDark
+                    ? AppShadows.primaryGlowDark
+                    : AppShadows.primaryGlowLight,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.check_rounded,
+                    size: 16,
+                    color: colorScheme.onPrimary,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    'Done',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: colorScheme.onPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1061,6 +1437,458 @@ class _QuickInfoChip extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Filled info showcase — appears below the Quick Info card
+// Shows each filled field in a professional row with an edit button.
+// Uses colorScheme semantic container tokens for mode-aware styling.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Semantic accent role for a filled-info row. Maps to the matching
+/// `colorScheme` container / on-container pair so colours adapt to both
+/// light and dark themes automatically.
+enum _InfoAccent { primary, secondary }
+
+class _FilledInfoShowcase extends StatelessWidget {
+  const _FilledInfoShowcase({
+    required this.form,
+    required this.colorScheme,
+    required this.isDark,
+    required this.onEditTitle,
+    required this.onEditNote,
+    required this.onEditDate,
+    required this.onEditPhoto,
+    required this.onRemoveTitle,
+    required this.onRemoveNote,
+    required this.onRemoveDate,
+    required this.onRemovePhoto,
+  });
+
+  final CreateBillFormState form;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final VoidCallback onEditTitle;
+  final VoidCallback onEditNote;
+  final VoidCallback onEditDate;
+  final VoidCallback onEditPhoto;
+  final VoidCallback onRemoveTitle;
+  final VoidCallback onRemoveNote;
+  final VoidCallback onRemoveDate;
+  final VoidCallback onRemovePhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <_FilledInfoItem>[];
+    if (form.receiptPhotoPath != null) {
+      items.add(_FilledInfoItem(
+        icon: Icons.check_circle_rounded,
+        accent: _InfoAccent.primary,
+        label: 'Receipt Photo',
+        value: 'Attached',
+        onEdit: onEditPhoto,
+        onRemove: onRemovePhoto,
+      ));
+    }
+    if (form.title.isNotEmpty) {
+      items.add(_FilledInfoItem(
+        icon: Icons.title_rounded,
+        accent: _InfoAccent.secondary,
+        label: 'Title',
+        value: form.title,
+        onEdit: onEditTitle,
+        onRemove: onRemoveTitle,
+      ));
+    }
+    if (form.note.isNotEmpty) {
+      items.add(_FilledInfoItem(
+        icon: Icons.sticky_note_2_rounded,
+        accent: _InfoAccent.primary,
+        label: 'Note',
+        value: form.note,
+        onEdit: onEditNote,
+        onRemove: onRemoveNote,
+      ));
+    }
+    if (form.date != null) {
+      items.add(_FilledInfoItem(
+        icon: Icons.event_available_rounded,
+        accent: _InfoAccent.secondary,
+        label: 'Date',
+        value: _formatDate(form.date!),
+        onEdit: onEditDate,
+        onRemove: onRemoveDate,
+      ));
+    }
+
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: AppSpacing.cardPadding,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppRadius.radiusXxl,
+        border: Border.all(
+          color: colorScheme.outlineVariant
+              .withValues(alpha: isDark ? 0.25 : 0.4),
+        ),
+        boxShadow: AppShadows.cardShadow(
+          isDark ? Brightness.dark : Brightness.light,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.task_alt_rounded,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'Added Details',
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  letterSpacing: 0.2,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          ...items.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: _FilledInfoRow(
+                  item: item,
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+}
+
+/// Data model for one filled field row.
+class _FilledInfoItem {
+  const _FilledInfoItem({
+    required this.icon,
+    required this.accent,
+    required this.label,
+    required this.value,
+    required this.onEdit,
+    required this.onRemove,
+  });
+
+  final IconData icon;
+  final _InfoAccent accent;
+  final String label;
+  final String value;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
+}
+
+/// Animated "tap to edit" hint icon — gently pulses with a bounce + opacity
+/// cycle to draw the user's attention to the tappable card.
+class _TapHintIcon extends StatefulWidget {
+  const _TapHintIcon();
+
+  @override
+  State<_TapHintIcon> createState() => _TapHintIconState();
+}
+
+class _TapHintIconState extends State<_TapHintIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scaleAnim;
+  late final Animation<double> _opacityAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+
+    // Scale: 1.0 → 1.25 → 1.0 (gentle bounce).
+    _scaleAnim = Tween<double>(begin: 1.0, end: 1.25).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOutCubicEmphasized,
+      ),
+    );
+    // Opacity: 0.35 → 0.75 → 0.35 (pulsing visibility).
+    _opacityAnim = Tween<double>(begin: 0.35, end: 0.75).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOutCubicEmphasized,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (_, child) {
+        return Opacity(
+          opacity: _opacityAnim.value,
+          child: Transform.scale(
+            scale: _scaleAnim.value,
+            child: child,
+          ),
+        );
+      },
+      child: Icon(
+        Icons.touch_app_rounded,
+        size: 16,
+        color: colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+/// A single filled field row with icon, label, value.
+/// Tap to flip-and-edit; swipe right to delete.
+/// Uses [ColorScheme] container tokens for mode-aware, professional styling.
+class _FilledInfoRow extends StatefulWidget {
+  const _FilledInfoRow({
+    required this.item,
+    required this.colorScheme,
+    required this.isDark,
+  });
+
+  final _FilledInfoItem item;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  State<_FilledInfoRow> createState() => _FilledInfoRowState();
+}
+
+class _FilledInfoRowState extends State<_FilledInfoRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _anim;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _scaleAnim;
+  bool _navigated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    // Smooth fade — delayed start so the row is visible as it begins moving.
+    _fadeAnim = CurvedAnimation(
+      parent: _anim,
+      curve: const Interval(0.15, 1.0, curve: Curves.easeOutCubic),
+    );
+    // Smooth slide up toward the Quick Info card above.
+    _slideAnim = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(0, -1.8),
+    ).animate(CurvedAnimation(
+      parent: _anim,
+      curve: Curves.easeInOutCubicEmphasized,
+    ));
+    // Gentle scale-down for a "merging" feel.
+    _scaleAnim = Tween<double>(begin: 1.0, end: 0.88).animate(
+      CurvedAnimation(
+        parent: _anim,
+        curve: Curves.easeInOutCubicEmphasized,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  Color get _containerColor {
+    switch (widget.item.accent) {
+      case _InfoAccent.primary:
+        return widget.colorScheme.primaryContainer;
+      case _InfoAccent.secondary:
+        return widget.colorScheme.secondaryContainer;
+    }
+  }
+
+  Color get _onContainerColor {
+    switch (widget.item.accent) {
+      case _InfoAccent.primary:
+        return widget.colorScheme.onPrimaryContainer;
+      case _InfoAccent.secondary:
+        return widget.colorScheme.onSecondaryContainer;
+    }
+  }
+
+  Future<void> _handleTap() async {
+    if (_navigated) return;
+    _navigated = true;
+    // Animate the row sliding up + fading out toward the editor.
+    await _anim.forward();
+    widget.item.onEdit();
+    // Reset for next time.
+    if (mounted) {
+      _anim.reset();
+      _navigated = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final container = _containerColor;
+    final onContainer = _onContainerColor;
+
+    return Dismissible(
+      key: ValueKey('${widget.item.label}-${widget.item.value}'),
+      direction: DismissDirection.startToEnd,
+      confirmDismiss: (direction) async {
+        widget.item.onRemove();
+        return false; // Don't remove from tree; the parent rebuilds.
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: AppSpacing.xl),
+        decoration: BoxDecoration(
+          // Subtle error-tinted surface — not a flat harsh red.
+          // Uses error at low alpha over the card's own surface colour
+          // so it blends naturally in both light and dark modes.
+          color: widget.isDark
+              ? widget.colorScheme.error.withValues(alpha: 0.12)
+              : widget.colorScheme.error.withValues(alpha: 0.08),
+          borderRadius: AppRadius.card,
+          border: Border.all(
+            color: widget.colorScheme.error.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: widget.colorScheme.error.withValues(alpha: 0.15),
+                borderRadius: AppRadius.radiusMd,
+              ),
+              child: Icon(
+                Icons.delete_sweep_rounded,
+                color: widget.colorScheme.error,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              'Delete',
+              style: AppTextStyles.labelLarge.copyWith(
+                color: widget.colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+      child: GestureDetector(
+        onTap: _handleTap,
+        child: AnimatedBuilder(
+          animation: _anim,
+          builder: (_, child) {
+            return Opacity(
+              opacity: 1 - _fadeAnim.value,
+              child: SlideTransition(
+                position: _slideAnim,
+                child: ScaleTransition(
+                  scale: _scaleAnim,
+                  child: child,
+                ),
+              ),
+            );
+          },
+          child: Container(
+            padding: AppSpacing.cardPaddingSymmetric,
+            decoration: BoxDecoration(
+              color: container.withValues(alpha: widget.isDark ? 0.25 : 0.45),
+              borderRadius: AppRadius.card,
+              border: Border.all(
+                color: onContainer
+                    .withValues(alpha: widget.isDark ? 0.20 : 0.12),
+              ),
+            ),
+            child: Row(
+              children: [
+                // Icon badge.
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color:
+                        onContainer.withValues(alpha: widget.isDark ? 0.18 : 0.12),
+                    borderRadius: AppRadius.radiusMd,
+                  ),
+                  child: Icon(widget.item.icon, size: 18, color: onContainer),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                // Label + value.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.item.label,
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: widget.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        widget.item.value,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: widget.colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                // Tap-to-edit hint icon — animated pulse to draw attention.
+                const _TapHintIcon(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Split section header
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1098,18 +1926,23 @@ class _SplitSectionHeader extends StatelessWidget {
 class _SplitSelector extends StatelessWidget {
   const _SplitSelector({
     required this.splitMode,
+    required this.amount,
     required this.colorScheme,
     required this.isDark,
     required this.onChanged,
   });
 
   final BillSplitMode splitMode;
+  final double amount;
   final ColorScheme colorScheme;
   final bool isDark;
   final ValueChanged<BillSplitMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    // Custom split requires an amount to be set first.
+    final customEnabled = amount > 0;
+
     return Row(
       children: [
         Expanded(
@@ -1120,6 +1953,7 @@ class _SplitSelector extends StatelessWidget {
             title: 'Equal Split',
             subtitle: 'Everyone pays\nthe same amount',
             isSelected: splitMode == BillSplitMode.equal,
+            isEnabled: true,
             colorScheme: colorScheme,
             isDark: isDark,
             onTap: () => onChanged(BillSplitMode.equal),
@@ -1132,8 +1966,11 @@ class _SplitSelector extends StatelessWidget {
             icon: Icons.tune_rounded,
             iconColor: AppColors.chartBlue,
             title: 'Custom Split',
-            subtitle: 'Set custom amounts\nfor each member',
+            subtitle: customEnabled
+                ? 'Set custom amounts\nfor each member'
+                : 'Enter amount first\nto enable custom',
             isSelected: splitMode == BillSplitMode.custom,
+            isEnabled: customEnabled,
             colorScheme: colorScheme,
             isDark: isDark,
             onTap: () => onChanged(BillSplitMode.custom),
@@ -1152,6 +1989,7 @@ class _SplitCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.isSelected,
+    required this.isEnabled,
     required this.colorScheme,
     required this.isDark,
     required this.onTap,
@@ -1163,77 +2001,92 @@ class _SplitCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool isSelected;
+  final bool isEnabled;
   final ColorScheme colorScheme;
   final bool isDark;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return _AnimatedTapScale(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? colorScheme.primaryContainer.withValues(alpha: isDark ? 0.25 : 0.55)
-              : colorScheme.surface,
-          borderRadius: AppRadius.radiusXxl,
-          border: Border.all(
+    return Opacity(
+      opacity: isEnabled ? 1.0 : 0.5,
+      child: _AnimatedTapScale(
+        onTap: isEnabled ? onTap : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          decoration: BoxDecoration(
             color: isSelected
-                ? colorScheme.primary.withValues(alpha: 0.6)
-                : colorScheme.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
-            width: isSelected ? 1.5 : 1.0,
+                ? colorScheme.primaryContainer
+                    .withValues(alpha: isDark ? 0.25 : 0.55)
+                : colorScheme.surface,
+            borderRadius: AppRadius.radiusXxl,
+            border: Border.all(
+              color: isSelected
+                  ? colorScheme.primary.withValues(alpha: 0.6)
+                  : colorScheme.outlineVariant
+                      .withValues(alpha: isDark ? 0.3 : 0.5),
+              width: isSelected ? 1.5 : 1.0,
+            ),
+            boxShadow: isSelected
+                ? (isDark
+                    ? AppShadows.primaryGlowDark
+                    : AppShadows.primaryGlowLight)
+                : (isDark ? AppShadows.xsDark : AppShadows.xsLight),
           ),
-          boxShadow: isSelected
-              ? (isDark ? AppShadows.primaryGlowDark : AppShadows.primaryGlowLight)
-              : (isDark ? AppShadows.xsDark : AppShadows.xsLight),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: iconColor, size: 20),
-                ),
-                const Spacer(),
-                AnimatedScale(
-                  scale: isSelected ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 280),
-                  curve: Curves.easeOutBack,
-                  child: Container(
-                    width: 22,
-                    height: 22,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
-                      color: colorScheme.primary,
+                      color: iconColor.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.check,
-                      size: 14,
-                      color: Colors.white,
-                    ),
+                    child: Icon(icon, color: iconColor, size: 20),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              title,
-              style: AppTextStyles.titleSmall.copyWith(
-                color: isSelected ? colorScheme.primary : colorScheme.onSurface,
-                fontWeight: FontWeight.w700,
+                  const Spacer(),
+                  if (!isEnabled)
+                    Icon(
+                      Icons.lock_outline,
+                      size: 18,
+                      color: colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.5),
+                    )
+                  else
+                    AnimatedScale(
+                      scale: isSelected ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 280),
+                      curve: Curves.easeOutBack,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.check,
+                          size: 14,
+                          color: colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                title,
+                style: AppTextStyles.titleSmall.copyWith(
+                  color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
             Text(
               subtitle,
               style: AppTextStyles.caption.copyWith(
@@ -1243,6 +2096,7 @@ class _SplitCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -2042,99 +2896,289 @@ class _ReviewButton extends StatelessWidget {
 // Exclude picker bottom sheet
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _ExcludePickerSheet extends StatelessWidget {
+class _ExcludePickerSheet extends ConsumerStatefulWidget {
   const _ExcludePickerSheet({
-    required this.participants,
+    required this.providerKey,
     required this.colorScheme,
     required this.isDark,
     required this.onToggle,
   });
 
-  final List<BillParticipant> participants;
+  final CreateBillKey providerKey;
   final ColorScheme colorScheme;
   final bool isDark;
   final ValueChanged<String> onToggle;
 
   @override
+  ConsumerState<_ExcludePickerSheet> createState() =>
+      _ExcludePickerSheetState();
+}
+
+class _ExcludePickerSheetState extends ConsumerState<_ExcludePickerSheet>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrance;
+
+  @override
+  void initState() {
+    super.initState();
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _entrance.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
+
+  /// Build a staggered fade + slide entrance for a child widget.
+  Widget _stagger(Widget child, double start, double end) {
+    return AnimatedBuilder(
+      animation: _entrance,
+      builder: (_, c) {
+        final curve = CurvedAnimation(
+          parent: _entrance,
+          curve: Interval(start, end, curve: Curves.easeOutCubic),
+        );
+        return Opacity(
+          opacity: curve.value,
+          child: Transform.translate(
+            offset: Offset(0, 16 * (1 - curve.value)),
+            child: c,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final participants =
+        ref.watch(createBillProvider(widget.providerKey)).participants;
+    final excludedCount =
+        participants.where((p) => !p.isIncluded).length;
+    final cs = widget.colorScheme;
+    final dark = widget.isDark;
+
     return DraggableScrollableSheet(
-      initialChildSize: 0.55,
+      initialChildSize: 0.6,
       minChildSize: 0.4,
-      maxChildSize: 0.85,
+      maxChildSize: 0.9,
       expand: false,
       builder: (_, scrollController) => Container(
         decoration: BoxDecoration(
-          color: colorScheme.surface,
+          color: cs.surface,
           borderRadius: AppRadius.topXxl,
+          border: Border(
+            top: BorderSide(
+              color: cs.outlineVariant.withValues(alpha: dark ? 0.3 : 0.5),
+              width: 1,
+            ),
+          ),
+          boxShadow: AppShadows.modalShadow(
+            dark ? Brightness.dark : Brightness.light,
+          ),
         ),
         child: Column(
           children: [
-            const SizedBox(height: AppSpacing.sm),
-            // Drag handle.
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colorScheme.outlineVariant,
-                  borderRadius: AppRadius.radiusFull,
+            // ── Drag handle ──────────────────────────────────────
+            const SizedBox(height: AppSpacing.md),
+            _stagger(
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: cs.outlineVariant
+                        .withValues(alpha: dark ? 0.5 : 0.7),
+                    borderRadius: AppRadius.radiusFull,
+                  ),
                 ),
               ),
+              0.0, 0.15,
             ),
             const SizedBox(height: AppSpacing.lg),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.screenHorizontal,
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.shield_outlined,
-                      color: AppColors.warning, size: 20),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    'Exclude from bill',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.w700,
+            // ── Header ───────────────────────────────────────────
+            _stagger(
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.screenHorizontal,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: cs.secondaryContainer
+                                .withValues(alpha: dark ? 0.3 : 0.6),
+                            borderRadius: AppRadius.radiusMd,
+                          ),
+                          child: Icon(
+                            Icons.person_remove_rounded,
+                            color: cs.onSecondaryContainer,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            'Exclude from bill',
+                            style: AppTextStyles.titleLarge.copyWith(
+                              color: cs.onSurface,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ),
+                        // Done button — pill style.
+                        _AnimatedTapScale(
+                          onTap: () => Navigator.of(context).pop(),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.lg,
+                              vertical: AppSpacing.sm,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.primary,
+                              borderRadius: AppRadius.radiusFull,
+                              boxShadow: dark
+                                  ? AppShadows.primaryGlowDark
+                                  : AppShadows.primaryGlowLight,
+                            ),
+                            child: Text(
+                              'Done',
+                              style: AppTextStyles.labelLarge.copyWith(
+                                color: cs.onPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Done'),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.screenHorizontal,
-              ),
-              child: Text(
-                'Excluded members will not be part of the split.',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Tap a member to include or exclude them from the split.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    // ── Excluded count badge — animated ───────────
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeInOutCubicEmphasized,
+                      alignment: Alignment.topLeft,
+                      child: AnimatedOpacity(
+                        opacity: excludedCount > 0 ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic,
+                        child: excludedCount > 0
+                            ? Padding(
+                                padding: const EdgeInsets.only(
+                                  top: AppSpacing.xs,
+                                ),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.sm,
+                                    vertical: AppSpacing.xs,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: cs.errorContainer
+                                        .withValues(alpha: dark ? 0.25 : 0.5),
+                                    borderRadius: AppRadius.radiusFull,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline_rounded,
+                                        size: 13,
+                                        color: cs.error,
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      AnimatedSwitcher(
+                                        duration: const Duration(
+                                          milliseconds: 250,
+                                        ),
+                                        transitionBuilder: (child, anim) =>
+                                            FadeTransition(
+                                          opacity: anim,
+                                          child: SlideTransition(
+                                            position: Tween<Offset>(
+                                              begin: const Offset(0, 0.3),
+                                              end: Offset.zero,
+                                            ).animate(anim),
+                                            child: child,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '$excludedCount '
+                                          '${excludedCount == 1 ? "person" : "people"} excluded',
+                                          key: ValueKey(excludedCount),
+                                          style: AppTextStyles.labelSmall
+                                              .copyWith(
+                                            color: cs.error,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              0.10, 0.30,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
+            // ── Divider ──────────────────────────────────────────
+            _stagger(
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: cs.outlineVariant
+                    .withValues(alpha: dark ? 0.2 : 0.4),
+              ),
+              0.20, 0.35,
+            ),
+            // ── Participant list ─────────────────────────────────
             Expanded(
               child: ListView.separated(
                 controller: scrollController,
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenHorizontal,
-                  vertical: AppSpacing.sm,
+                  vertical: AppSpacing.md,
                 ),
                 itemCount: participants.length,
                 separatorBuilder: (_, __) =>
                     const SizedBox(height: AppSpacing.sm),
                 itemBuilder: (_, i) {
                   final p = participants[i];
-                  return _ExcludeParticipantTile(
-                    participant: p,
-                    colorScheme: colorScheme,
-                    isDark: isDark,
-                    onToggle: () => onToggle(p.id),
+                  // Stagger each tile with a slight delay based on index.
+                  final start = 0.25 + (i * 0.04).clamp(0.0, 0.35);
+                  final end = start + 0.20;
+                  return _stagger(
+                    _ExcludeParticipantTile(
+                      participant: p,
+                      colorScheme: cs,
+                      isDark: dark,
+                      onToggle: () => widget.onToggle(p.id),
+                    ),
+                    start, end,
                   );
                 },
               ),
@@ -2164,19 +3208,22 @@ class _ExcludeParticipantTile extends StatelessWidget {
     final isExcluded = !participant.isIncluded;
 
     return _AnimatedTapScale(
-      onTap: participant.isCurrentUser ? null : onToggle,
+      onTap: onToggle,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         padding: AppSpacing.cardPaddingSymmetric,
         decoration: BoxDecoration(
           color: isExcluded
-              ? colorScheme.errorContainer.withValues(alpha: isDark ? 0.3 : 0.15)
-              : colorScheme.surface,
+              ? colorScheme.errorContainer
+                  .withValues(alpha: isDark ? 0.25 : 0.4)
+              : colorScheme.surfaceContainerHighest
+                  .withValues(alpha: isDark ? 0.3 : 0.5),
           borderRadius: AppRadius.radiusLg,
           border: Border.all(
             color: isExcluded
                 ? colorScheme.error.withValues(alpha: 0.3)
-                : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                : colorScheme.outlineVariant
+                    .withValues(alpha: isDark ? 0.2 : 0.4),
           ),
         ),
         child: Row(
@@ -2189,11 +3236,17 @@ class _ExcludeParticipantTile extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        participant.bestDisplayName,
-                        style: AppTextStyles.titleSmall.copyWith(
-                          color: colorScheme.onSurface,
-                          fontWeight: FontWeight.w600,
+                      Flexible(
+                        child: Text(
+                          participant.bestDisplayName,
+                          style: AppTextStyles.titleSmall.copyWith(
+                            color: isExcluded
+                                ? colorScheme.onSurfaceVariant
+                                : colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (participant.isCurrentUser) ...[
@@ -2219,42 +3272,52 @@ class _ExcludeParticipantTile extends StatelessWidget {
                       ],
                     ],
                   ),
+                  const SizedBox(height: AppSpacing.xxs),
                   Text(
-                    participant.email,
+                    isExcluded ? 'Excluded' : 'Included',
                     style: AppTextStyles.caption.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                      color: isExcluded
+                          ? colorScheme.error
+                          : colorScheme.onSurfaceVariant,
+                      fontWeight: isExcluded ? FontWeight.w600 : FontWeight.w400,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            if (participant.isCurrentUser)
-              Text(
-                'Always included',
-                style: AppTextStyles.caption.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              )
-            else
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: isExcluded
-                    ? Icon(
-                        Icons.remove_circle_rounded,
-                        key: const ValueKey('excluded'),
-                        color: colorScheme.error,
-                        size: 22,
-                      )
-                    : Icon(
-                        Icons.check_circle_rounded,
-                        key: const ValueKey('included'),
-                        color: colorScheme.primary,
-                        size: 22,
+            // Status toggle.
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: isExcluded
+                  ? Container(
+                      key: const ValueKey('excluded'),
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: colorScheme.error.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
                       ),
-              ),
+                      child: Icon(
+                        Icons.remove_rounded,
+                        color: colorScheme.error,
+                        size: 18,
+                      ),
+                    )
+                  : Container(
+                      key: const ValueKey('included'),
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.check_rounded,
+                        color: colorScheme.primary,
+                        size: 18,
+                      ),
+                    ),
+            ),
           ],
         ),
       ),
@@ -2780,79 +3843,6 @@ class _AmountDialog extends StatelessWidget {
             Navigator.of(context).pop();
           },
           child: const Text('Confirm'),
-        ),
-      ],
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Text field dialog (Title / Note)
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _TextFieldDialog extends StatelessWidget {
-  const _TextFieldDialog({
-    required this.controller,
-    required this.colorScheme,
-    required this.isDark,
-    required this.title,
-    required this.hint,
-    required this.maxLength,
-    required this.onConfirm,
-    this.maxLines = 1,
-  });
-
-  final TextEditingController controller;
-  final ColorScheme colorScheme;
-  final bool isDark;
-  final String title;
-  final String hint;
-  final int maxLength;
-  final int maxLines;
-  final ValueChanged<String> onConfirm;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        title,
-        style: AppTextStyles.headlineSmall.copyWith(
-          color: colorScheme.onSurface,
-          fontWeight: FontWeight.w700,
-          fontSize: 20,
-        ),
-      ),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLines: maxLines,
-        maxLength: maxLength,
-        textInputAction:
-            maxLines > 1 ? TextInputAction.newline : TextInputAction.done,
-        decoration: InputDecoration(
-          hintText: hint,
-          counterStyle: AppTextStyles.caption.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        onSubmitted: maxLines == 1
-            ? (v) {
-                onConfirm(v);
-                Navigator.of(context).pop();
-              }
-            : null,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            onConfirm(controller.text);
-            Navigator.of(context).pop();
-          },
-          child: const Text('Save'),
         ),
       ],
     );

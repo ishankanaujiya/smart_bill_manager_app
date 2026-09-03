@@ -99,7 +99,7 @@ class CreateBillFormState {
     String? rawAmountText,
     String? title,
     String? note,
-    DateTime? date,
+    Object? date = _kSentinel,
     Object? receiptPhotoPath = _kSentinel,
     BillSplitMode? splitMode,
     List<BillParticipant>? participants,
@@ -112,7 +112,7 @@ class CreateBillFormState {
       rawAmountText: rawAmountText ?? this.rawAmountText,
       title: title ?? this.title,
       note: note ?? this.note,
-      date: date ?? this.date,
+      date: date == _kSentinel ? this.date : date as DateTime?,
       receiptPhotoPath: receiptPhotoPath == _kSentinel
           ? this.receiptPhotoPath
           : receiptPhotoPath as String?,
@@ -191,6 +191,8 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
   void setNote(String note) => state = state.copyWith(note: note);
 
   void setDate(DateTime date) => state = state.copyWith(date: date);
+
+  void clearDate() => state = state.copyWith(date: null);
 
   void setReceiptPhoto(String? path) =>
       state = state.copyWith(receiptPhotoPath: path);
