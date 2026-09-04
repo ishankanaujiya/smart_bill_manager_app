@@ -116,34 +116,12 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
               AppSpacing.screenHorizontal,
               AppSpacing.sm,
             ),
-            child: Row(
-              children: [
-                Material(
-                  color: colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.6),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).pop(),
-                    customBorder: const CircleBorder(),
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      child: Icon(
-                        Icons.arrow_back_rounded,
-                        color: colorScheme.onSurface,
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Text(
-                  'Bill Details',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+            child: Text(
+              'Bill Details',
+              style: AppTextStyles.titleMedium.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
@@ -966,10 +944,19 @@ String _methodLabel(BillPaymentMethod m) {
   };
 }
 
+/// Returns the Firestore string key for a payment method — used to look up
+/// values in [Bill.paymentQrUrls] and [Bill.paymentIds].
+String _methodKey(BillPaymentMethod method) {
+  return switch (method) {
+    BillPaymentMethod.esewa => 'esewa',
+    BillPaymentMethod.khalti => 'khalti',
+    BillPaymentMethod.bank => 'bank',
+  };
+}
+
 /// Renders the "Payment Method" header and one tappable card per method the
-/// bill creator selected. [Bill.paymentMethods] and [Bill.paymentQrUrls] are
-/// parallel arrays — we zip them, treating a missing/empty URL as "no QR
-/// uploaded" for that method.
+/// bill creator selected. QR URLs and account IDs are looked up by method
+/// name key from [Bill.paymentQrUrls] and [Bill.paymentIds] respectively.
 class _PaymentMethodSection extends StatelessWidget {
   const _PaymentMethodSection({
     required this.bill,
@@ -984,7 +971,6 @@ class _PaymentMethodSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final methods = bill.paymentMethods;
-    final qrUrls = bill.paymentQrUrls;
     final count = methods.length;
 
     return Column(
@@ -1023,8 +1009,9 @@ class _PaymentMethodSection extends StatelessWidget {
               billId: bill.id,
               index: i,
               method: methods[i],
-              qrUrl: (i < qrUrls.length) ? qrUrls[i] : null,
+              qrUrl: bill.paymentQrUrls[_methodKey(methods[i])],
               bankName: bill.selectedBankName,
+              accountId: bill.paymentIds[_methodKey(methods[i])],
               colorScheme: colorScheme,
               isDark: isDark,
             ),
@@ -1048,6 +1035,7 @@ class _PaymentMethodCard extends StatefulWidget {
     required this.method,
     required this.qrUrl,
     required this.bankName,
+    required this.accountId,
     required this.colorScheme,
     required this.isDark,
   });
@@ -1057,6 +1045,7 @@ class _PaymentMethodCard extends StatefulWidget {
   final BillPaymentMethod method;
   final String? qrUrl;
   final String? bankName;
+  final String? accountId;
   final ColorScheme colorScheme;
   final bool isDark;
 
@@ -1090,6 +1079,14 @@ class _PaymentMethodCardState extends State<_PaymentMethodCard>
       widget.qrUrl != null && widget.qrUrl!.isNotEmpty;
 
   String get _heroTag => 'payment-qr-${widget.billId}-${widget.index}';
+
+  String get _accountIdLabel {
+    return switch (widget.method) {
+      BillPaymentMethod.esewa => 'eSewa ID',
+      BillPaymentMethod.khalti => 'Khalti ID',
+      BillPaymentMethod.bank => 'Account No.',
+    };
+  }
 
   String get _subtitle {
     if (widget.method == BillPaymentMethod.bank) {
@@ -1189,7 +1186,7 @@ class _PaymentMethodCardState extends State<_PaymentMethodCard>
               ),
               const SizedBox(width: AppSpacing.md),
 
-              // Label + subtitle.
+              // Label + subtitle + account ID.
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1213,6 +1210,46 @@ class _PaymentMethodCardState extends State<_PaymentMethodCard>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (widget.accountId != null &&
+                        widget.accountId!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.1),
+                          borderRadius: AppRadius.radiusSm,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$_accountIdLabel: ',
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: accent.withValues(alpha: 0.8),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Flexible(
+                              child: Text(
+                                widget.accountId!,
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: cs.onSurface,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -470,6 +470,7 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
                         onRemoveMethod: _notifier.removePaymentMethod,
                         onPickQr: _pickQrPhoto,
                         onBankNameChanged: _notifier.setBankName,
+                        onAccountIdChanged: _notifier.setAccountId,
                       ),
                       0.14, 0.32,
                     ),

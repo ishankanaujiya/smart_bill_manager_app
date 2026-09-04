@@ -2,6 +2,7 @@ import 'dart:io' as io;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/constants/bank_names.dart';
@@ -30,6 +31,7 @@ class PaymentOptionsCard extends StatefulWidget {
     required this.onRemoveMethod,
     required this.onPickQr,
     required this.onBankNameChanged,
+    required this.onAccountIdChanged,
     this.uploadingQrMethod,
     this.paymentMethodError,
   });
@@ -50,6 +52,10 @@ class PaymentOptionsCard extends StatefulWidget {
 
   /// Called when the user selects a bank name.
   final void Function(String?) onBankNameChanged;
+
+  /// Called when the user types in the account ID / account number field.
+  /// The first argument is the payment method the field belongs to.
+  final void Function(BillPaymentMethod, String) onAccountIdChanged;
 
   /// The payment method currently being uploaded (null = none).
   /// Only the matching entry shows a loading spinner.
@@ -132,7 +138,8 @@ class _PaymentOptionsCardState extends State<PaymentOptionsCard>
                 widget.onRemoveMethod(method);
               } else {
                 // Tapping any other method activates it (preserving
-                // any previously uploaded QR photo or bank name).
+                // any previously uploaded QR photo, bank name, or
+                // account ID).
                 widget.onAddMethod(method);
               }
             },
@@ -163,7 +170,9 @@ class _PaymentOptionsCardState extends State<PaymentOptionsCard>
             ),
           ],
 
-          // ── Expanded entry for the selected method (animated transition) ──
+          // ── Expanded entry for the active (first) method ──────────────
+          // Other entries are retained in the list for data preservation
+          // when switching methods, but only the active one is shown.
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 380),
             switchInCurve: Curves.easeOutCubic,
@@ -219,6 +228,8 @@ class _PaymentOptionsCardState extends State<PaymentOptionsCard>
                         onPickQr: () => widget.onPickQr(widget.paymentEntries.first.method),
                         onRemove: () => widget.onRemoveMethod(widget.paymentEntries.first.method),
                         onBankNameChanged: widget.onBankNameChanged,
+                        onAccountIdChanged: (value) =>
+                            widget.onAccountIdChanged(widget.paymentEntries.first.method, value),
                       ),
                     ],
                   ),
@@ -499,6 +510,7 @@ class _PaymentEntry extends StatefulWidget {
     required this.onPickQr,
     required this.onRemove,
     required this.onBankNameChanged,
+    required this.onAccountIdChanged,
   });
 
   final PaymentMethodEntry entry;
@@ -509,6 +521,7 @@ class _PaymentEntry extends StatefulWidget {
   final VoidCallback onPickQr;
   final VoidCallback onRemove;
   final void Function(String?) onBankNameChanged;
+  final void Function(String) onAccountIdChanged;
 
   @override
   State<_PaymentEntry> createState() => _PaymentEntryState();
@@ -611,7 +624,7 @@ class _PaymentEntryState extends State<_PaymentEntry>
                   height: 1,
                   color: _accentColor.withValues(alpha: 0.15),
                 ),
-                // ── Bank selector (only for bank method) ──────────────────
+                // ── Bank selector (only for bank method, shown FIRST) ─────
                 if (entry.method == BillPaymentMethod.bank) ...[
                   _BankSelector(
                     selectedBank: entry.bankName,
@@ -619,6 +632,25 @@ class _PaymentEntryState extends State<_PaymentEntry>
                     colorScheme: colorScheme,
                     isDark: isDark,
                     onChanged: widget.onBankNameChanged,
+                  ),
+                  Divider(
+                    height: 1,
+                    color: _accentColor.withValues(alpha: 0.15),
+                  ),
+                ],
+                // ── Account ID / account number field ───────────────────────
+                // For bank: only show after a bank has been selected.
+                // For eSewa/Khalti: always show.
+                if (entry.method != BillPaymentMethod.bank ||
+                    (entry.bankName != null && entry.bankName!.isNotEmpty)) ...[
+                  _AccountIdField(
+                    method: entry.method,
+                    value: entry.accountId ?? '',
+                    error: entry.accountIdError,
+                    accentColor: _accentColor,
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    onChanged: widget.onAccountIdChanged,
                   ),
                   Divider(
                     height: 1,
@@ -720,6 +752,303 @@ class _EntryHeader extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Account ID / account number text field
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A styled text field for entering the eSewa/Khalti ID or bank account
+/// number. The label, hint, and icon adapt to the selected [method].
+///
+/// Shows inline validation feedback via [error] — a red border + error
+/// message when non-null, an accent-colored border when the field has
+/// content and no error.
+class _AccountIdField extends StatefulWidget {
+  const _AccountIdField({
+    required this.method,
+    required this.value,
+    required this.error,
+    required this.accentColor,
+    required this.colorScheme,
+    required this.isDark,
+    required this.onChanged,
+  });
+
+  final BillPaymentMethod method;
+  final String value;
+  final String? error;
+  final Color accentColor;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final void Function(String) onChanged;
+
+  @override
+  State<_AccountIdField> createState() => _AccountIdFieldState();
+}
+
+class _AccountIdFieldState extends State<_AccountIdField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (mounted && _focusNode.hasFocus != _isFocused) {
+        setState(() => _isFocused = _focusNode.hasFocus);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _AccountIdField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Keep the controller in sync with external state without jumping the
+    // cursor when the user is actively typing.
+    if (widget.value != _controller.text && !_focusNode.hasFocus) {
+      _controller.text = widget.value;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  String get _label {
+    return switch (widget.method) {
+      BillPaymentMethod.esewa => 'eSewa ID',
+      BillPaymentMethod.khalti => 'Khalti ID',
+      BillPaymentMethod.bank => 'Account Number',
+    };
+  }
+
+  /// Short brand name used in validation messages.
+  String _methodLabel(BillPaymentMethod m) {
+    return switch (m) {
+      BillPaymentMethod.esewa => 'eSewa',
+      BillPaymentMethod.khalti => 'Khalti',
+      BillPaymentMethod.bank => 'Bank',
+    };
+  }
+
+  String get _hint {
+    return switch (widget.method) {
+      BillPaymentMethod.esewa => 'Starts with 98 or 97',
+      BillPaymentMethod.khalti => 'Starts with 98 or 97',
+      BillPaymentMethod.bank => 'Enter account number',
+    };
+  }
+
+  IconData get _icon {
+    return switch (widget.method) {
+      BillPaymentMethod.bank => Icons.credit_card_rounded,
+      _ => Icons.alternate_email_rounded,
+    };
+  }
+
+  /// Maximum number of digits allowed for this method.
+  int get _maxLength {
+    return switch (widget.method) {
+      BillPaymentMethod.esewa => 10,
+      BillPaymentMethod.khalti => 10,
+      BillPaymentMethod.bank => 16,
+    };
+  }
+
+  /// Input formatters: digits only, capped at [_maxLength].
+  List<TextInputFormatter> get _formatters {
+    return [
+      FilteringTextInputFormatter.digitsOnly,
+      LengthLimitingTextInputFormatter(_maxLength),
+    ];
+  }
+
+  /// Live prefix validation for eSewa/Khalti IDs.
+  ///
+  /// Nepali mobile numbers (used as eSewa/Khalti IDs) must start with `98`
+  /// or `97`. We hold off showing an error while the user has only typed the
+  /// first digit `9` (since the second digit could still make it valid).
+  /// Once a second digit is typed, or if the first digit isn't `9`, we
+  /// validate the full prefix. Returns `null` when the prefix is valid (or
+  /// the field is empty, or it's a bank method).
+  String? get _livePrefixError {
+    if (widget.method == BillPaymentMethod.bank) return null;
+    final value = widget.value;
+    if (value.isEmpty) return null;
+    // First digit isn't 9 → invalid immediately.
+    if (!value.startsWith('9')) {
+      return 'Enter a valid ${_methodLabel(widget.method)} ID';
+    }
+    // First digit is 9 — wait for the second digit before judging.
+    if (value.length < 2) return null;
+    if (!value.startsWith('98') && !value.startsWith('97')) {
+      return 'Enter a valid ${_methodLabel(widget.method)} ID';
+    }
+    return null;
+  }
+
+  /// The effective error to display — the live prefix error takes priority
+  /// during typing, falling back to any error passed in from the notifier.
+  String? get _effectiveError => _livePrefixError ?? widget.error;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = widget.colorScheme;
+    final error = _effectiveError;
+    final hasError = error != null;
+    final hasValue = widget.value.isNotEmpty;
+
+    Color borderColor;
+    if (hasError) {
+      borderColor = cs.error;
+    } else if (_isFocused) {
+      borderColor = widget.accentColor;
+    } else if (hasValue) {
+      borderColor = widget.accentColor.withValues(alpha: 0.5);
+    } else {
+      borderColor = cs.outlineVariant.withValues(alpha: widget.isDark ? 0.35 : 0.55);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Label row.
+          Row(
+            children: [
+              Icon(
+                _icon,
+                size: 13,
+                color: cs.onSurfaceVariant,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                _label,
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 5,
+                  vertical: 1,
+                ),
+                decoration: BoxDecoration(
+                  color: cs.error.withValues(alpha: 0.1),
+                  borderRadius: AppRadius.radiusFull,
+                ),
+                child: Text(
+                  'Required',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: cs.error,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs + 2),
+          // Text field container.
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            decoration: BoxDecoration(
+              color: cs.surface,
+              borderRadius: AppRadius.radiusMd,
+              border: Border.all(
+                color: borderColor,
+                width: _isFocused || hasError ? 1.5 : 1.0,
+              ),
+            ),
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              onChanged: widget.onChanged,
+              keyboardType: TextInputType.number,
+              textCapitalization: TextCapitalization.none,
+              textInputAction: TextInputAction.done,
+              textAlignVertical: TextAlignVertical.center,
+              inputFormatters: _formatters,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm + 2,
+                ),
+                border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                isDense: true,
+                hintText: _hint,
+                hintStyle: AppTextStyles.bodySmall.copyWith(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+                counterText: '',
+                suffixIcon: hasValue && !hasError
+                    ? Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.sm),
+                        child: Icon(
+                          Icons.check_circle_rounded,
+                          size: 18,
+                          color: widget.accentColor,
+                        ),
+                      )
+                    : null,
+                suffixIconConstraints: const BoxConstraints(
+                  minHeight: 18,
+                  minWidth: 18,
+                ),
+              ),
+            ),
+          ),
+          // Error message.
+          if (hasError) ...[
+            const SizedBox(height: AppSpacing.xs + 2),
+            Row(
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  size: 13,
+                  color: cs.error,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    error,
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: cs.error,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

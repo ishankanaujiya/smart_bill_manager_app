@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../groups/data/service/cloudinary_service.dart';
@@ -97,19 +98,21 @@ class SaveBillNotifier extends StateNotifier<SaveBillState> {
       }
 
       // 2. Upload QR code images for each payment method (if provided).
-      final qrUrls = <String>[];
+      //    Build a method-name-keyed map: {esewa: url, khalti: url, bank: url}
+      final qrUrlMap = <String, String>{};
       for (final entry in paymentEntries) {
         final path = entry.qrPhotoPath;
+        final key = _methodKey(entry.method);
         if (path != null) {
           final file = File(path);
           if (await file.exists()) {
             final url = await _cloudinary.uploadFile(file);
-            qrUrls.add(url ?? '');
+            qrUrlMap[key] = url ?? '';
           } else {
-            qrUrls.add('');
+            qrUrlMap[key] = '';
           }
         } else {
-          qrUrls.add('');
+          qrUrlMap[key] = '';
         }
       }
 
@@ -120,8 +123,13 @@ class SaveBillNotifier extends StateNotifier<SaveBillState> {
             .where((p) => !p.isIncluded)
             .map((p) => p.id)
             .toList(),
-        paymentQrUrls: qrUrls,
+        paymentQrUrls: qrUrlMap,
       );
+
+      // Debug: log what's being written to Firestore.
+      debugPrint('[SaveBillNotifier] bill.paymentMethods=${billToSave.paymentMethods}');
+      debugPrint('[SaveBillNotifier] bill.paymentIds=${billToSave.paymentIds}');
+      debugPrint('[SaveBillNotifier] bill.paymentQrUrls=${billToSave.paymentQrUrls}');
 
       // 4. Persist to Firestore.
       final saved = await _billRepo.createBill(billToSave);
@@ -162,6 +170,16 @@ final saveBillProvider =
     ref.read(cloudinaryServiceProvider),
   );
 });
+
+/// Returns the Firestore string key for a payment method — used as the key
+/// in the `payment_id` and `payment_qr_urls` maps.
+String _methodKey(BillPaymentMethod method) {
+  return switch (method) {
+    BillPaymentMethod.esewa => 'esewa',
+    BillPaymentMethod.khalti => 'khalti',
+    BillPaymentMethod.bank => 'bank',
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bills list for a group (real-time stream)

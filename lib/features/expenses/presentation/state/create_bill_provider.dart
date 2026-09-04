@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_constants.dart';
@@ -42,6 +43,8 @@ class PaymentMethodEntry {
     required this.method,
     this.qrPhotoPath,
     this.bankName,
+    this.accountId,
+    this.accountIdError,
   });
 
   final BillPaymentMethod method;
@@ -52,10 +55,18 @@ class PaymentMethodEntry {
   /// Selected bank name (only relevant for [BillPaymentMethod.bank]).
   final String? bankName;
 
+  /// eSewa/Khalti ID or bank account number for this method.
+  final String? accountId;
+
+  /// Inline validation error for [accountId].
+  final String? accountIdError;
+
   PaymentMethodEntry copyWith({
     BillPaymentMethod? method,
     Object? qrPhotoPath = _kPaySentinel,
     Object? bankName = _kPaySentinel,
+    Object? accountId = _kPaySentinel,
+    Object? accountIdError = _kPaySentinel,
   }) {
     return PaymentMethodEntry(
       method: method ?? this.method,
@@ -65,6 +76,12 @@ class PaymentMethodEntry {
       bankName: bankName == _kPaySentinel
           ? this.bankName
           : bankName as String?,
+      accountId: accountId == _kPaySentinel
+          ? this.accountId
+          : accountId as String?,
+      accountIdError: accountIdError == _kPaySentinel
+          ? this.accountIdError
+          : accountIdError as String?,
     );
   }
 }
@@ -149,6 +166,17 @@ class CreateBillFormState {
     if (date == null) return false;
     // At least one payment option is required.
     if (paymentEntries.isEmpty) return false;
+    // The active (first) payment method must have a valid account ID.
+    final active = paymentEntries.first;
+    final id = (active.accountId ?? '').trim();
+    if (active.method == BillPaymentMethod.bank) {
+      // Bank: bank name selected + 8–16 digit account number.
+      if (active.bankName == null || active.bankName!.isEmpty) return false;
+      if (id.length < 8 || id.length > 16) return false;
+    } else {
+      // eSewa/Khalti: exactly 10 digits.
+      if (id.length != 10) return false;
+    }
     return true;
   }
 
@@ -282,13 +310,13 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
 
   // ── Payment methods ──────────────────────────────────────────────────────
 
-  /// Switches the active payment method to [method].
+  /// Switches the active payment method to [method] (single-selection).
   ///
-  /// If the method was previously selected (and has a QR photo or bank
-  /// name), its existing entry is preserved and moved to the front so the
-  /// user doesn't lose uploaded data when switching back and forth.
+  /// If the method was previously selected (and has a QR photo, bank name,
+  /// or account ID), its existing entry is preserved and moved to the front
+  /// so the user doesn't lose uploaded data when switching back and forth.
   /// Other entries are kept in the list for data retention but only the
-  /// first (active) one is shown in the UI.
+  /// first (active) one is shown in the UI and saved to Firestore.
   void addPaymentMethod(BillPaymentMethod method) {
     final existing = state.paymentEntries
         .where((e) => e.method == method)
@@ -329,6 +357,23 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
       paymentEntries: state.paymentEntries.map((e) {
         if (e.method == BillPaymentMethod.bank) {
           return e.copyWith(bankName: bankName);
+        }
+        return e;
+      }).toList(),
+    );
+  }
+
+  /// Updates the account ID (eSewa/Khalti ID or bank account number) for
+  /// the active (first) payment method entry. Clears any previous validation
+  /// error on that entry.
+  void setAccountId(BillPaymentMethod method, String accountId) {
+    state = state.copyWith(
+      paymentEntries: state.paymentEntries.map((e) {
+        if (e.method == state.paymentEntries.first.method) {
+          return e.copyWith(
+            accountId: accountId,
+            accountIdError: null,
+          );
         }
         return e;
       }).toList(),
@@ -427,6 +472,67 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
       );
       return state.paymentMethodError;
     }
+    // The active (first) payment method must have a valid account ID.
+    final activeEntry = state.paymentEntries.first;
+    final id = activeEntry.accountId?.trim() ?? '';
+    // For bank: also require a bank name to be selected first.
+    if (activeEntry.method == BillPaymentMethod.bank &&
+        (activeEntry.bankName == null || activeEntry.bankName!.isEmpty)) {
+      final error = 'Please select a bank first.';
+      state = state.copyWith(
+        paymentEntries: state.paymentEntries.map((e) {
+          if (e.method == activeEntry.method) {
+            return e.copyWith(accountIdError: error);
+          }
+          return e;
+        }).toList(),
+      );
+      return error;
+    }
+    if (id.isEmpty) {
+      final label = activeEntry.method == BillPaymentMethod.bank
+          ? 'account number'
+          : '${_methodLabel(activeEntry.method)} ID';
+      final error = 'Please enter the $label.';
+      state = state.copyWith(
+        paymentEntries: state.paymentEntries.map((e) {
+          if (e.method == activeEntry.method) {
+            return e.copyWith(accountIdError: error);
+          }
+          return e;
+        }).toList(),
+      );
+      return error;
+    }
+    // eSewa/Khalti: exactly 10 digits. Bank: 8–16 digits.
+    if (activeEntry.method != BillPaymentMethod.bank) {
+      if (id.length != 10) {
+        final error =
+            '${_methodLabel(activeEntry.method)} ID must be exactly 10 digits.';
+        state = state.copyWith(
+          paymentEntries: state.paymentEntries.map((e) {
+            if (e.method == activeEntry.method) {
+              return e.copyWith(accountIdError: error);
+            }
+            return e;
+          }).toList(),
+        );
+        return error;
+      }
+    } else {
+      if (id.length < 8 || id.length > 16) {
+        final error = 'Account number must be 8–16 digits.';
+        state = state.copyWith(
+          paymentEntries: state.paymentEntries.map((e) {
+            if (e.method == activeEntry.method) {
+              return e.copyWith(accountIdError: error);
+            }
+            return e;
+          }).toList(),
+        );
+        return error;
+      }
+    }
     if (state.includedCount == 0) {
       state = state.copyWith(
         participantsError: 'At least one participant must be included.',
@@ -454,13 +560,32 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
 
     final now = DateTime.now();
 
-    // Extract payment data — only the active (first) entry is used.
-    // QR URLs are uploaded later in SaveBillNotifier.
-    final activeEntry = state.paymentEntries.first;
-    final methods = [activeEntry.method];
-    final bankEntry = activeEntry.method == BillPaymentMethod.bank
-        ? activeEntry
-        : null;
+    // The UI is single-selection (one active method shown at a time), but
+    // all entries whose account IDs are filled are persisted to Firestore so
+    // that switching between methods and filling each one saves every method.
+    // QR URLs are uploaded later in SaveBillNotifier (it already iterates all
+    // entries).
+    final entries = state.paymentEntries;
+
+    // paymentMethods + paymentIds: every entry that has a non-empty account
+    // ID. Since validate() passed, the active (first) entry is guaranteed to
+    // have a valid ID, so it will always be included.
+    final methods = <BillPaymentMethod>[];
+    final paymentIds = <String, String>{};
+    for (final e in entries) {
+      final id = e.accountId?.trim() ?? '';
+      if (id.isEmpty) continue;
+      methods.add(e.method);
+      paymentIds[_methodKey(e.method)] = id;
+    }
+
+    // selectedBankName: use the bank entry's name if a bank entry exists.
+    final bankEntry = entries
+        .where((e) => e.method == BillPaymentMethod.bank)
+        .firstOrNull;
+
+    // Debug: log what's being saved so we can trace any issues.
+    debugPrint('[buildBill] entries=${entries.length} methods=$methods paymentIds=$paymentIds');
 
     return Bill(
       id: '',
@@ -480,12 +605,33 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
           .map((p) => p.id)
           .toList(),
       paymentMethods: methods,
-      paymentQrUrls: const [], // Set after Cloudinary upload in SaveBillNotifier
+      paymentQrUrls: const {}, // Set after Cloudinary upload in SaveBillNotifier
       selectedBankName: bankEntry?.bankName,
+      paymentIds: paymentIds,
     );
   }
 
   void reset() => state = const CreateBillFormState();
+}
+
+/// Returns the display label for a payment method (used in validation
+/// messages).
+String _methodLabel(BillPaymentMethod method) {
+  return switch (method) {
+    BillPaymentMethod.esewa => 'eSewa',
+    BillPaymentMethod.khalti => 'Khalti',
+    BillPaymentMethod.bank => 'Bank',
+  };
+}
+
+/// Returns the Firestore string key for a payment method — used as the key
+/// in the `payment_id` and `payment_qr_urls` maps.
+String _methodKey(BillPaymentMethod method) {
+  return switch (method) {
+    BillPaymentMethod.esewa => 'esewa',
+    BillPaymentMethod.khalti => 'khalti',
+    BillPaymentMethod.bank => 'bank',
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

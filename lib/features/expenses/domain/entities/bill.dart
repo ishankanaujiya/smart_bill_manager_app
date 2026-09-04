@@ -134,8 +134,9 @@ class Bill {
     this.realExpenseMadeBy,
     this.excludedMemberIds = const [],
     this.paymentMethods = const [],
-    this.paymentQrUrls = const [],
+    this.paymentQrUrls = const {},
     this.selectedBankName,
+    this.paymentIds = const {},
   });
 
   /// Firestore document ID of the bill (auto-generated on create).
@@ -194,13 +195,24 @@ class Bill {
   /// Payment methods chosen for this bill (can be multiple).
   final List<BillPaymentMethod> paymentMethods;
 
-  /// Cloudinary URLs of QR code images, parallel to [paymentMethods].
-  /// Each entry corresponds to the QR code for the same-indexed payment method.
-  final List<String> paymentQrUrls;
+  /// Cloudinary URLs of QR code images, keyed by payment method name
+  /// (`'esewa'`, `'khalti'`, `'bank'`). Only methods the bill creator
+  /// selected will have an entry.
+  ///
+  /// Example: `{'esewa': 'https://...', 'khalti': 'https://...'}`
+  final Map<String, String> paymentQrUrls;
 
   /// The name of the selected bank (only relevant when [paymentMethods]
   /// contains [BillPaymentMethod.bank]).
   final String? selectedBankName;
+
+  /// Payment IDs / account numbers keyed by payment method name
+  /// (`'esewa'`, `'khalti'`, `'bank'`). The value is the eSewa ID, Khalti
+  /// ID, or bank account number respectively. Only methods the bill creator
+  /// selected will have an entry.
+  ///
+  /// Example: `{'esewa': '9812345678', 'bank': '123456789012'}`
+  final Map<String, String> paymentIds;
 
   // ── Convenience getters ──────────────────────────────────────────────────
 
@@ -260,8 +272,9 @@ class Bill {
     Map<String, dynamic>? realExpenseMadeBy,
     List<String>? excludedMemberIds,
     List<BillPaymentMethod>? paymentMethods,
-    List<String>? paymentQrUrls,
+    Map<String, String>? paymentQrUrls,
     Object? selectedBankName = _kBillSentinel,
+    Map<String, String>? paymentIds,
   }) {
     return Bill(
       id: id ?? this.id,
@@ -285,6 +298,7 @@ class Bill {
       selectedBankName: selectedBankName == _kBillSentinel
           ? this.selectedBankName
           : selectedBankName as String?,
+      paymentIds: paymentIds ?? this.paymentIds,
     );
   }
 }

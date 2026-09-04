@@ -25,8 +25,9 @@ import '../../domain/entities/bill.dart';
 /// - `updated_at`         : Timestamp (server)
 /// - `group_name`         : String   (snapshot)
 /// - `payment_methods`    : List of String  ('esewa' | 'khalti' | 'bank')
-/// - `payment_qr_urls`    : List of String  (Cloudinary URLs for QR code images)
+/// - `payment_qr_urls`    : `Map<String,String>`  (keyed by method name → Cloudinary URL)
 /// - `selected_bank_name` : String?  (bank name when method includes 'bank')
+/// - `payment_id`         : `Map<String,String>`  (keyed by method name → eSewa ID / Khalti ID / bank account number)
 class BillModel {
   const BillModel._({
     required this.id,
@@ -49,6 +50,7 @@ class BillModel {
     this.date,
     this.realExpenseMadeBy,
     this.selectedBankName,
+    this.paymentIds = const {},
   });
 
   /// Firestore subcollection name — `bills` inside each group document.
@@ -72,8 +74,9 @@ class BillModel {
   final DateTime updatedAt;
   final Map<String, dynamic>? realExpenseMadeBy;
   final List<String> paymentMethods; // ['esewa', 'khalti', 'bank']
-  final List<String> paymentQrUrls; // Cloudinary URLs for each QR code
+  final Map<String, String> paymentQrUrls; // method name → Cloudinary URL
   final String? selectedBankName;
+  final Map<String, String> paymentIds; // method name → ID / account number
 
   /// Creates a [BillModel] from a Firestore document.
   factory BillModel.fromDocument(
@@ -105,8 +108,9 @@ class BillModel {
           (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       realExpenseMadeBy: _normalizeNullableMap(data['real_expense_made_by']),
       paymentMethods: _normalizeStringList(data['payment_methods']),
-      paymentQrUrls: _normalizeStringList(data['payment_qr_urls']),
+      paymentQrUrls: _parseQrUrlMap(data['payment_qr_urls'], data['payment_methods']),
       selectedBankName: data['selected_bank_name'] as String?,
+      paymentIds: _parsePaymentIdMap(data['payment_id'], data['payment_account_id'], data['payment_methods']),
     );
   }
 
@@ -140,8 +144,9 @@ class BillModel {
           (map['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       realExpenseMadeBy: _normalizeNullableMap(map['real_expense_made_by']),
       paymentMethods: _normalizeStringList(map['payment_methods']),
-      paymentQrUrls: _normalizeStringList(map['payment_qr_urls']),
+      paymentQrUrls: _parseQrUrlMap(map['payment_qr_urls'], map['payment_methods']),
       selectedBankName: map['selected_bank_name'] as String?,
+      paymentIds: _parsePaymentIdMap(map['payment_id'], map['payment_account_id'], map['payment_methods']),
     );
   }
 
@@ -170,6 +175,7 @@ class BillModel {
       'payment_methods': paymentMethods,
       'payment_qr_urls': paymentQrUrls,
       'selected_bank_name': selectedBankName,
+      'payment_id': paymentIds,
     };
   }
 
@@ -198,8 +204,9 @@ class BillModel {
           .map(_paymentMethodFromString)
           .whereType<BillPaymentMethod>()
           .toList(),
-      paymentQrUrls: List<String>.of(paymentQrUrls),
+      paymentQrUrls: Map<String, String>.of(paymentQrUrls),
       selectedBankName: selectedBankName,
+      paymentIds: Map<String, String>.of(paymentIds),
     );
   }
 
@@ -226,8 +233,9 @@ class BillModel {
       paymentMethods: bill.paymentMethods
           .map(_paymentMethodToString)
           .toList(),
-      paymentQrUrls: List<String>.of(bill.paymentQrUrls),
+      paymentQrUrls: Map<String, String>.of(bill.paymentQrUrls),
       selectedBankName: bill.selectedBankName,
+      paymentIds: Map<String, String>.of(bill.paymentIds),
     );
   }
 
@@ -239,6 +247,60 @@ class BillModel {
   static List<String> _normalizeStringList(dynamic value) {
     if (value is! List) return [];
     return value.whereType<String>().toList(growable: false);
+  }
+
+  /// Parses `payment_qr_urls` into a method-name-keyed map.
+  ///
+  /// Supports both the new map format (`{esewa: url, ...}`) and the legacy
+  /// list format (`[url1, url2, ...]` parallel to `payment_methods`). When
+  /// the value is a list, it's zipped with [methodsRaw] to produce the map.
+  static Map<String, String> _parseQrUrlMap(
+    dynamic value,
+    dynamic methodsRaw,
+  ) {
+    // New format: map.
+    if (value is Map) {
+      return value.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
+    }
+    // Legacy format: list parallel to payment_methods.
+    if (value is List) {
+      final methods = _normalizeStringList(methodsRaw);
+      final urls = value.whereType<String>().toList();
+      final map = <String, String>{};
+      for (var i = 0; i < methods.length && i < urls.length; i++) {
+        map[methods[i]] = urls[i];
+      }
+      return map;
+    }
+    return {};
+  }
+
+  /// Parses `payment_id` into a method-name-keyed map.
+  ///
+  /// Supports three scenarios:
+  /// 1. New format: `payment_id` is a map (`{esewa: id, ...}`).
+  /// 2. Legacy: `payment_id` is absent but `payment_account_id` (String?)
+  ///    exists — it's assigned to the first (active) method.
+  /// 3. Neither exists — returns an empty map.
+  static Map<String, String> _parsePaymentIdMap(
+    dynamic paymentIdMap,
+    dynamic legacyAccountId,
+    dynamic methodsRaw,
+  ) {
+    // New format: map.
+    if (paymentIdMap is Map) {
+      return paymentIdMap
+          .map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
+        ..removeWhere((_, v) => v.isEmpty);
+    }
+    // Legacy: single String? assigned to the active method.
+    if (legacyAccountId is String && legacyAccountId.isNotEmpty) {
+      final methods = _normalizeStringList(methodsRaw);
+      if (methods.isNotEmpty) {
+        return {methods.first: legacyAccountId};
+      }
+    }
+    return {};
   }
 
   /// Coerces a Firestore value into a single map.
