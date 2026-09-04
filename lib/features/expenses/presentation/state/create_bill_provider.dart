@@ -282,15 +282,25 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
 
   // ── Payment methods ──────────────────────────────────────────────────────
 
-  /// Adds a payment method entry if not already present.
+  /// Switches the active payment method to [method].
+  ///
+  /// If the method was previously selected (and has a QR photo or bank
+  /// name), its existing entry is preserved and moved to the front so the
+  /// user doesn't lose uploaded data when switching back and forth.
+  /// Other entries are kept in the list for data retention but only the
+  /// first (active) one is shown in the UI.
   void addPaymentMethod(BillPaymentMethod method) {
-    final already = state.paymentEntries.any((e) => e.method == method);
-    if (already) return;
+    final existing = state.paymentEntries
+        .where((e) => e.method == method)
+        .toList();
+    final entry = existing.isNotEmpty
+        ? existing.first
+        : PaymentMethodEntry(method: method);
+    final rest = state.paymentEntries
+        .where((e) => e.method != method)
+        .toList();
     state = state.copyWith(
-      paymentEntries: [
-        ...state.paymentEntries,
-        PaymentMethodEntry(method: method),
-      ],
+      paymentEntries: [entry, ...rest],
       paymentMethodError: null,
     );
   }
@@ -413,7 +423,7 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
     // At least one payment option is required.
     if (state.paymentEntries.isEmpty) {
       state = state.copyWith(
-        paymentMethodError: 'Please select at least one payment option.',
+        paymentMethodError: 'Please select a payment option.',
       );
       return state.paymentMethodError;
     }
@@ -444,11 +454,13 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
 
     final now = DateTime.now();
 
-    // Extract payment data — QR URLs are uploaded later in SaveBillNotifier.
-    final methods = state.paymentEntries.map((e) => e.method).toList();
-    final bankEntry = state.paymentEntries
-        .cast<PaymentMethodEntry?>()
-        .firstWhere((e) => e?.method == BillPaymentMethod.bank, orElse: () => null);
+    // Extract payment data — only the active (first) entry is used.
+    // QR URLs are uploaded later in SaveBillNotifier.
+    final activeEntry = state.paymentEntries.first;
+    final methods = [activeEntry.method];
+    final bankEntry = activeEntry.method == BillPaymentMethod.bank
+        ? activeEntry
+        : null;
 
     return Bill(
       id: '',

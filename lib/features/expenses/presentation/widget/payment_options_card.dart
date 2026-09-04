@@ -12,11 +12,11 @@ import '../state/create_bill_provider.dart';
 // Payment Options Card
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// A card-style widget that lets the user pick one or more payment methods
-/// (eSewa, Khalti, Bank) and upload the corresponding QR code image for each.
+/// A card-style widget that lets the user pick one payment method
+/// (eSewa, Khalti, or Bank) and upload the corresponding QR code image.
 ///
-/// For [BillPaymentMethod.bank], an additional dropdown to pick the bank name
-/// is shown — along with the QR upload field.
+/// Only one method may be selected at a time — selecting a new method
+/// replaces the previous one.
 ///
 /// All state is managed externally via the callbacks below so the parent
 /// (the create-bill screen) remains the single source of truth.
@@ -84,8 +84,9 @@ class _PaymentOptionsCardState extends State<PaymentOptionsCard>
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  bool _hasMethod(BillPaymentMethod m) =>
-      widget.paymentEntries.any((e) => e.method == m);
+  bool _isActiveMethod(BillPaymentMethod m) =>
+      widget.paymentEntries.isNotEmpty &&
+      widget.paymentEntries.first.method == m;
 
   // ── Build ────────────────────────────────────────────────────────────────
 
@@ -120,13 +121,18 @@ class _PaymentOptionsCardState extends State<PaymentOptionsCard>
           _MethodSelectorRow(
             colorScheme: cs,
             isDark: isDark,
-            hasEsewa: _hasMethod(BillPaymentMethod.esewa),
-            hasKhalti: _hasMethod(BillPaymentMethod.khalti),
-            hasBank: _hasMethod(BillPaymentMethod.bank),
+            hasEsewa: _isActiveMethod(BillPaymentMethod.esewa),
+            hasKhalti: _isActiveMethod(BillPaymentMethod.khalti),
+            hasBank: _isActiveMethod(BillPaymentMethod.bank),
             onToggle: (method) {
-              if (_hasMethod(method)) {
+              final isActive = widget.paymentEntries.isNotEmpty &&
+                  widget.paymentEntries.first.method == method;
+              if (isActive) {
+                // Tapping the active method deselects it.
                 widget.onRemoveMethod(method);
               } else {
+                // Tapping any other method activates it (preserving
+                // any previously uploaded QR photo or bank name).
                 widget.onAddMethod(method);
               }
             },
@@ -157,29 +163,63 @@ class _PaymentOptionsCardState extends State<PaymentOptionsCard>
             ),
           ],
 
-          // ── Expanded entries for each selected method ──────────────────
-          AnimatedSize(
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeOutCubic,
+          // ── Expanded entry for the selected method (animated transition) ──
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 380),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final offset = Tween<Offset>(
+                begin: const Offset(0, 0.12),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              ));
+              final fade = Tween<double>(
+                begin: 0.0,
+                end: 1.0,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
+              ));
+              return FadeTransition(
+                opacity: fade,
+                child: SlideTransition(
+                  position: offset,
+                  child: child,
+                ),
+              );
+            },
+            layoutBuilder: (currentChild, previousChildren) {
+              return Stack(
+                alignment: Alignment.topLeft,
+                children: <Widget>[
+                  ...previousChildren,
+                  if (currentChild != null) currentChild,
+                ],
+              );
+            },
             child: widget.paymentEntries.isEmpty
                 ? const SizedBox.shrink()
                 : Column(
+                    key: ValueKey(
+                      widget.paymentEntries.first.method,
+                    ),
                     children: [
                       const SizedBox(height: AppSpacing.lg),
-                      ...widget.paymentEntries.map((entry) {
-                        return _PaymentEntry(
-                          key: ValueKey(entry.method),
-                          entry: entry,
-                          colorScheme: cs,
-                          isDark: isDark,
-                          isUploadingQr:
-                              widget.uploadingQrMethod == entry.method,
-                          pulseController: _pulseController,
-                          onPickQr: () => widget.onPickQr(entry.method),
-                          onRemove: () => widget.onRemoveMethod(entry.method),
-                          onBankNameChanged: widget.onBankNameChanged,
-                        );
-                      }),
+                      _PaymentEntry(
+                        key: ValueKey(widget.paymentEntries.first.method),
+                        entry: widget.paymentEntries.first,
+                        colorScheme: cs,
+                        isDark: isDark,
+                        isUploadingQr:
+                            widget.uploadingQrMethod == widget.paymentEntries.first.method,
+                        pulseController: _pulseController,
+                        onPickQr: () => widget.onPickQr(widget.paymentEntries.first.method),
+                        onRemove: () => widget.onRemoveMethod(widget.paymentEntries.first.method),
+                        onBankNameChanged: widget.onBankNameChanged,
+                      ),
                     ],
                   ),
           ),
@@ -233,7 +273,7 @@ class _CardHeader extends StatelessWidget {
               ),
               Text(
                 hasAnyMethod
-                    ? 'Add your QR codes for selected methods'
+                    ? 'Add your QR code for the selected method'
                     : 'Choose how payers can send money',
                 style: AppTextStyles.labelSmall.copyWith(
                   color: colorScheme.onSurfaceVariant,
@@ -243,26 +283,6 @@ class _CardHeader extends StatelessWidget {
             ],
           ),
         ),
-        if (hasAnyMethod)
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: 3,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.success.withValues(alpha: 0.12),
-              borderRadius: AppRadius.radiusFull,
-            ),
-            child: Text(
-              'Optional',
-              style: AppTextStyles.labelSmall.copyWith(
-                color: AppColors.success,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -396,7 +416,7 @@ class _MethodChipState extends State<_MethodChip>
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOutCubic,
-            height: 52,
+            height: 80,
             decoration: BoxDecoration(
               color: selected
                   ? widget.color.withValues(alpha: widget.isDark ? 0.25 : 0.12)
@@ -415,14 +435,14 @@ class _MethodChipState extends State<_MethodChip>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _buildIcon(selected, cs),
-                const SizedBox(height: 3),
+                const SizedBox(height: 7),
                 Text(
                   widget.label,
                   style: AppTextStyles.labelSmall.copyWith(
                     color: selected ? widget.color : cs.onSurfaceVariant,
                     fontWeight:
                         selected ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 10.5,
+                    fontSize: 12.5,
                     letterSpacing: 0.1,
                   ),
                 ),
@@ -439,7 +459,7 @@ class _MethodChipState extends State<_MethodChip>
       return IconTheme(
         data: IconThemeData(
           color: selected ? widget.color : cs.onSurfaceVariant,
-          size: 14,
+          size: 26,
         ),
         child: widget.iconWidget!,
       );
@@ -447,18 +467,18 @@ class _MethodChipState extends State<_MethodChip>
     if (widget.icon != null) {
       return Image.asset(
         widget.icon!,
-        width: 18,
-        height: 18,
+        width: 36,
+        height: 36,
         errorBuilder: (_, __, ___) => Icon(
           Icons.payment_rounded,
-          size: 14,
+          size: 26,
           color: selected ? widget.color : cs.onSurfaceVariant,
         ),
       );
     }
     return Icon(
       Icons.payment_rounded,
-      size: 14,
+      size: 26,
       color: selected ? widget.color : cs.onSurfaceVariant,
     );
   }
@@ -468,7 +488,7 @@ class _MethodChipState extends State<_MethodChip>
 // Individual payment entry (expanded panel per method)
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _PaymentEntry extends StatelessWidget {
+class _PaymentEntry extends StatefulWidget {
   const _PaymentEntry({
     super.key,
     required this.entry,
@@ -489,6 +509,48 @@ class _PaymentEntry extends StatelessWidget {
   final VoidCallback onPickQr;
   final VoidCallback onRemove;
   final void Function(String?) onBankNameChanged;
+
+  @override
+  State<_PaymentEntry> createState() => _PaymentEntryState();
+}
+
+class _PaymentEntryState extends State<_PaymentEntry>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrance;
+  late final Animation<double> _scaleAnim;
+  late final Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _scaleAnim = Tween<double>(begin: 0.96, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entrance,
+        curve: Curves.easeOutBack,
+      ),
+    );
+    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entrance,
+        curve: const Interval(0.1, 1.0, curve: Curves.easeOut),
+      ),
+    );
+    _entrance.forward();
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
+
+  PaymentMethodEntry get entry => widget.entry;
+  ColorScheme get colorScheme => widget.colorScheme;
+  bool get isDark => widget.isDark;
 
   Color get _accentColor {
     return switch (entry.method) {
@@ -518,58 +580,64 @@ class _PaymentEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-        decoration: BoxDecoration(
-          color: _accentColor.withValues(alpha: isDark ? 0.07 : 0.04),
-          borderRadius: AppRadius.radiusLg,
-          border: Border.all(
-            color: _accentColor.withValues(alpha: 0.3),
-            width: 1.0,
+      child: FadeTransition(
+        opacity: _fadeAnim,
+        child: ScaleTransition(
+          scale: _scaleAnim,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: _accentColor.withValues(alpha: isDark ? 0.07 : 0.04),
+              borderRadius: AppRadius.radiusLg,
+              border: Border.all(
+                color: _accentColor.withValues(alpha: 0.3),
+                width: 1.0,
+              ),
+            ),
+            child: Column(
+              children: [
+                // ── Entry header ──────────────────────────────────────────
+                _EntryHeader(
+                  method: entry.method,
+                  label: _methodLabel,
+                  logoPath: _logoPath,
+                  accentColor: _accentColor,
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                  onRemove: widget.onRemove,
+                ),
+                Divider(
+                  height: 1,
+                  color: _accentColor.withValues(alpha: 0.15),
+                ),
+                // ── Bank selector (only for bank method) ──────────────────
+                if (entry.method == BillPaymentMethod.bank) ...[
+                  _BankSelector(
+                    selectedBank: entry.bankName,
+                    accentColor: _accentColor,
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    onChanged: widget.onBankNameChanged,
+                  ),
+                  Divider(
+                    height: 1,
+                    color: _accentColor.withValues(alpha: 0.15),
+                  ),
+                ],
+                // ── QR code upload zone ────────────────────────────────────
+                _QrUploadZone(
+                  qrPhotoPath: entry.qrPhotoPath,
+                  accentColor: _accentColor,
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                  isUploading: widget.isUploadingQr,
+                  pulseController: widget.pulseController,
+                  onTap: widget.onPickQr,
+                ),
+              ],
+            ),
           ),
-        ),
-        child: Column(
-          children: [
-            // ── Entry header ──────────────────────────────────────────
-            _EntryHeader(
-              method: entry.method,
-              label: _methodLabel,
-              logoPath: _logoPath,
-              accentColor: _accentColor,
-              colorScheme: colorScheme,
-              isDark: isDark,
-              onRemove: onRemove,
-            ),
-            Divider(
-              height: 1,
-              color: _accentColor.withValues(alpha: 0.15),
-            ),
-            // ── Bank selector (only for bank method) ──────────────────
-            if (entry.method == BillPaymentMethod.bank) ...[
-              _BankSelector(
-                selectedBank: entry.bankName,
-                accentColor: _accentColor,
-                colorScheme: colorScheme,
-                isDark: isDark,
-                onChanged: onBankNameChanged,
-              ),
-              Divider(
-                height: 1,
-                color: _accentColor.withValues(alpha: 0.15),
-              ),
-            ],
-            // ── QR code upload zone ────────────────────────────────────
-            _QrUploadZone(
-              qrPhotoPath: entry.qrPhotoPath,
-              accentColor: _accentColor,
-              colorScheme: colorScheme,
-              isDark: isDark,
-              isUploading: isUploadingQr,
-              pulseController: pulseController,
-              onTap: onPickQr,
-            ),
-          ],
         ),
       ),
     );
@@ -1131,7 +1199,7 @@ class _LoadingOverlay extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Opening gallery…',
+                  'Uploading…',
                   style: AppTextStyles.labelSmall.copyWith(
                     color: accentColor.withValues(alpha: alpha),
                     fontSize: 10,

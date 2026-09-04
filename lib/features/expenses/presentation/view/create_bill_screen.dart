@@ -187,6 +187,8 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
         imageQuality: 90,
       );
       if (xFile == null) return;
+      // Simulate processing/upload delay for a professional loading feel.
+      await Future.delayed(const Duration(milliseconds: 800));
       _notifier.setQrPhotoPath(method, xFile.path);
     } catch (e) {
       if (mounted) {
@@ -224,6 +226,8 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
         imageQuality: 85,
       );
       if (xFile == null) return;
+      // Simulate processing/upload delay for a professional loading feel.
+      await Future.delayed(const Duration(milliseconds: 800));
       _notifier.setReceiptPhoto(xFile.path);
     } on Exception {
       if (mounted) {
@@ -1413,9 +1417,12 @@ class _QuickInfoChips extends StatelessWidget {
                   ? Icons.check_circle_rounded
                   : Icons.camera_alt_outlined),
           label: 'Add Photo',
-          sublabel: form.receiptPhotoPath != null ? 'Attached' : 'Upload bill',
+          sublabel: isPickingPhoto
+              ? 'Uploading…'
+              : (form.receiptPhotoPath != null ? 'Attached' : 'Upload bill'),
           color: AppColors.chartOrange,
           isDone: form.receiptPhotoPath != null,
+          isLoading: isPickingPhoto,
           colorScheme: colorScheme,
           isDark: isDark,
           onTap: onAddPhoto,
@@ -1638,6 +1645,7 @@ class _QuickInfoChip extends StatelessWidget {
     required this.isDark,
     required this.onTap,
     this.isRequired = false,
+    this.isLoading = false,
   });
 
   final IconData icon;
@@ -1652,6 +1660,9 @@ class _QuickInfoChip extends StatelessWidget {
   /// Whether this field is required.  When true and [isDone] is false,
   /// a small red dot is shown on the icon circle to indicate it's needed.
   final bool isRequired;
+
+  /// When true, shows a loading spinner instead of the icon.
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -1669,30 +1680,44 @@ class _QuickInfoChip extends StatelessWidget {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: isDone
-                    ? color.withValues(alpha: 0.18)
-                    : colorScheme.surfaceContainerHighest,
+                color: isLoading
+                    ? color.withValues(alpha: 0.10)
+                    : isDone
+                        ? color.withValues(alpha: 0.18)
+                        : colorScheme.surfaceContainerHighest,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: showRequiredDot
-                      ? colorScheme.error.withValues(alpha: 0.5)
-                      : isDone
-                          ? color.withValues(alpha: 0.4)
-                          : colorScheme.outlineVariant.withValues(alpha: 0.5),
-                  width: showRequiredDot || isDone ? 1.5 : 1.0,
+                  color: isLoading
+                      ? color.withValues(alpha: 0.5)
+                      : showRequiredDot
+                          ? colorScheme.error.withValues(alpha: 0.5)
+                          : isDone
+                              ? color.withValues(alpha: 0.4)
+                              : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  width: isLoading || showRequiredDot || isDone ? 1.5 : 1.0,
                 ),
               ),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  Icon(
-                    icon,
-                    color: showRequiredDot
-                        ? colorScheme.error
-                        : isDone ? color : colorScheme.onSurfaceVariant,
-                    size: 24,
-                  ),
-                  if (isDone)
+                  if (isLoading)
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                    )
+                  else
+                    Icon(
+                      icon,
+                      color: showRequiredDot
+                          ? colorScheme.error
+                          : isDone ? color : colorScheme.onSurfaceVariant,
+                      size: 24,
+                    ),
+                  if (isDone && !isLoading)
                     Positioned(
                       right: 6,
                       bottom: 6,
