@@ -14,21 +14,6 @@ import '../../domain/entities/bill.dart';
 /// - `total_bill_amount`  : double
 /// - `bill_picture`       : String?  (Cloudinary secure_url)
 /// - `date`               : Timestamp
-/// - `split_mode`         : String   ('equal' or 'custom')
-/// - `members`            : List of Map  (participant snapshots)
-/// - `splitted_amount`    : List of Map  (member_id, member_name, amount)
-/// - `excluded_members`   : List of String  (UIDs)
-/// - `payment_status`     : String   ('unpaid' or 'partially_paid' or 'paid')
-/// - `real_expense_made_by`: Map?     (profile snapshot of who paid)
-/// - `created_by`         : Map      (profile snapshot of the bill creator)
-/// - `created_at`         : Timestamp (server)
-/// - `updated_at`         : Timestamp (server)
-/// - `group_name`         : String   (snapshot)
-/// - `title`              : String
-/// - `note`               : String?
-/// - `total_bill_amount`  : double
-/// - `bill_picture`       : String?  (Cloudinary secure_url)
-/// - `date`               : Timestamp
 /// - `split_mode`         : String   ('equal' | 'custom')
 /// - `members`            : List<Map>  (participant snapshots)
 /// - `splitted_amount`    : List<Map>  ({member_id, member_name, amount})
@@ -39,6 +24,9 @@ import '../../domain/entities/bill.dart';
 /// - `created_at`         : Timestamp (server)
 /// - `updated_at`         : Timestamp (server)
 /// - `group_name`         : String   (snapshot)
+/// - `payment_methods`    : List of String  ('esewa' | 'khalti' | 'bank')
+/// - `payment_qr_urls`    : List of String  (Cloudinary URLs for QR code images)
+/// - `selected_bank_name` : String?  (bank name when method includes 'bank')
 class BillModel {
   const BillModel._({
     required this.id,
@@ -54,10 +42,13 @@ class BillModel {
     required this.createdBy,
     required this.createdAt,
     required this.updatedAt,
+    required this.paymentMethods,
+    required this.paymentQrUrls,
     this.note,
     this.billPicture,
     this.date,
     this.realExpenseMadeBy,
+    this.selectedBankName,
   });
 
   /// Firestore subcollection name — `bills` inside each group document.
@@ -80,6 +71,9 @@ class BillModel {
   final DateTime createdAt;
   final DateTime updatedAt;
   final Map<String, dynamic>? realExpenseMadeBy;
+  final List<String> paymentMethods; // ['esewa', 'khalti', 'bank']
+  final List<String> paymentQrUrls; // Cloudinary URLs for each QR code
+  final String? selectedBankName;
 
   /// Creates a [BillModel] from a Firestore document.
   factory BillModel.fromDocument(
@@ -110,6 +104,9 @@ class BillModel {
       updatedAt:
           (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       realExpenseMadeBy: _normalizeNullableMap(data['real_expense_made_by']),
+      paymentMethods: _normalizeStringList(data['payment_methods']),
+      paymentQrUrls: _normalizeStringList(data['payment_qr_urls']),
+      selectedBankName: data['selected_bank_name'] as String?,
     );
   }
 
@@ -142,6 +139,9 @@ class BillModel {
       updatedAt:
           (map['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       realExpenseMadeBy: _normalizeNullableMap(map['real_expense_made_by']),
+      paymentMethods: _normalizeStringList(map['payment_methods']),
+      paymentQrUrls: _normalizeStringList(map['payment_qr_urls']),
+      selectedBankName: map['selected_bank_name'] as String?,
     );
   }
 
@@ -167,6 +167,9 @@ class BillModel {
       'group_name': groupName,
       'created_at': isNew ? FieldValue.serverTimestamp() : createdAt,
       'updated_at': FieldValue.serverTimestamp(),
+      'payment_methods': paymentMethods,
+      'payment_qr_urls': paymentQrUrls,
+      'selected_bank_name': selectedBankName,
     };
   }
 
@@ -191,6 +194,12 @@ class BillModel {
       paymentStatus: _paymentStatusFromString(paymentStatus),
       realExpenseMadeBy: realExpenseMadeBy,
       excludedMemberIds: List<String>.of(excludedMembers),
+      paymentMethods: paymentMethods
+          .map(_paymentMethodFromString)
+          .whereType<BillPaymentMethod>()
+          .toList(),
+      paymentQrUrls: List<String>.of(paymentQrUrls),
+      selectedBankName: selectedBankName,
     );
   }
 
@@ -214,6 +223,11 @@ class BillModel {
       createdAt: bill.createdAt,
       updatedAt: bill.updatedAt ?? bill.createdAt,
       realExpenseMadeBy: bill.realExpenseMadeBy,
+      paymentMethods: bill.paymentMethods
+          .map(_paymentMethodToString)
+          .toList(),
+      paymentQrUrls: List<String>.of(bill.paymentQrUrls),
+      selectedBankName: bill.selectedBankName,
     );
   }
 
@@ -315,6 +329,23 @@ class BillModel {
       'paid' => 'paid',
       'partially_paid' => 'partially_paid',
       _ => 'unpaid',
+    };
+  }
+
+  static String _paymentMethodToString(BillPaymentMethod method) {
+    return switch (method) {
+      BillPaymentMethod.esewa => 'esewa',
+      BillPaymentMethod.khalti => 'khalti',
+      BillPaymentMethod.bank => 'bank',
+    };
+  }
+
+  static BillPaymentMethod? _paymentMethodFromString(String value) {
+    return switch (value) {
+      'esewa' => BillPaymentMethod.esewa,
+      'khalti' => BillPaymentMethod.khalti,
+      'bank' => BillPaymentMethod.bank,
+      _ => null,
     };
   }
 }

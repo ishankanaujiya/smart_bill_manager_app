@@ -8,6 +8,7 @@ import '../../../groups/presentation/state/group_providers.dart';
 import '../../data/repositories/bill_repository_impl.dart';
 import '../../domain/entities/bill.dart';
 import '../../domain/repositories/bill_repository.dart';
+import 'create_bill_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repository & service providers
@@ -74,9 +75,12 @@ class SaveBillNotifier extends StateNotifier<SaveBillState> {
   /// (which is derived from [receiptPhotoPath] via Cloudinary upload).
   /// [receiptPhotoPath] is the optional local file path of the picked
   /// receipt photo.
+  /// [paymentEntries] are the payment method entries whose QR codes need
+  /// to be uploaded to Cloudinary before saving.
   Future<bool> saveBill({
     required Bill bill,
     String? receiptPhotoPath,
+    List<PaymentMethodEntry> paymentEntries = const [],
   }) async {
     state = const SaveBillLoading();
 
@@ -92,16 +96,34 @@ class SaveBillNotifier extends StateNotifier<SaveBillState> {
         }
       }
 
-      // 2. Build the final bill entity with the Cloudinary URL.
+      // 2. Upload QR code images for each payment method (if provided).
+      final qrUrls = <String>[];
+      for (final entry in paymentEntries) {
+        final path = entry.qrPhotoPath;
+        if (path != null) {
+          final file = File(path);
+          if (await file.exists()) {
+            final url = await _cloudinary.uploadFile(file);
+            qrUrls.add(url ?? '');
+          } else {
+            qrUrls.add('');
+          }
+        } else {
+          qrUrls.add('');
+        }
+      }
+
+      // 3. Build the final bill entity with the Cloudinary URLs.
       final billToSave = bill.copyWith(
         receiptPhotoUrl: receiptUrl ?? bill.receiptPhotoUrl,
         excludedMemberIds: bill.participants
             .where((p) => !p.isIncluded)
             .map((p) => p.id)
             .toList(),
+        paymentQrUrls: qrUrls,
       );
 
-      // 3. Persist to Firestore.
+      // 4. Persist to Firestore.
       final saved = await _billRepo.createBill(billToSave);
 
       state = SaveBillSuccess(saved);

@@ -392,6 +392,53 @@ class _GroupHeroHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cardBg = isDark ? AppColors.darkBackground : AppColors.white;
+    final bevelHi = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.white.withValues(alpha: 0.65);
+    final bevelLo = isDark
+        ? Colors.black.withValues(alpha: 0.30)
+        : Colors.black.withValues(alpha: 0.03);
+    final sheenColor = isDark
+        ? colorScheme.primary.withValues(alpha: 0.08)
+        : Colors.white.withValues(alpha: 0.30);
+    final orbColor = isDark
+        ? colorScheme.primary.withValues(alpha: 0.08)
+        : colorScheme.primary.withValues(alpha: 0.05);
+    final rimColor = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.85);
+    final borderColor = isDark
+        ? colorScheme.outlineVariant.withValues(alpha: 0.25)
+        : colorScheme.outlineVariant.withValues(alpha: 0.50);
+    final cardShadow = isDark
+        ? [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.40),
+              blurRadius: 28,
+              offset: const Offset(0, 14),
+              spreadRadius: -2,
+            ),
+            BoxShadow(
+              color: colorScheme.primary.withValues(alpha: 0.15),
+              blurRadius: 32,
+              offset: const Offset(0, 10),
+            ),
+          ]
+        : [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.07),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+              spreadRadius: -2,
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.035),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ];
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.screenHorizontal,
@@ -405,94 +452,195 @@ class _GroupHeroHeader extends StatelessWidget {
         slideOffset: 28,
         child: Container(
           decoration: BoxDecoration(
+            color: cardBg,
             borderRadius: AppRadius.radiusXxl,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? AppColors.darkPrimaryGradient.colors
-                  : AppColors.lightPrimaryGradient.colors,
-            ),
-            boxShadow: isDark
-                ? AppShadows.primaryGlowDark
-                : AppShadows.primaryGlowLight,
+            border: Border.all(color: borderColor, width: 1.5),
+            boxShadow: cardShadow,
           ),
-          child: Stack(
-            children: [
-              // Ambient sheen.
-              Positioned.fill(
-                child: AnimatedBuilder(
-                  animation: ambientController,
-                  builder: (context, _) {
-                    final t = ambientController.value;
-                    final sweepX = -0.3 + 1.6 * t;
-                    return DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: AppRadius.radiusXxl,
-                        gradient: LinearGradient(
-                          begin: Alignment(sweepX, -0.8),
-                          end: Alignment(sweepX + 0.4, 0.8),
-                          colors: [
-                            Colors.white.withValues(alpha: 0.0),
-                            Colors.white.withValues(
-                                alpha: isDark ? 0.06 : 0.10),
-                            Colors.white.withValues(alpha: 0.0),
-                          ],
-                          stops: const [0.0, 0.5, 1.0],
-                        ),
+          child: ClipRRect(
+            borderRadius: AppRadius.radiusXxl,
+            child: Stack(
+              children: [
+                // 3D bevel / surface lighting overlay.
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          bevelHi,
+                          Colors.transparent,
+                          bevelLo,
+                        ],
+                        stops: const [0.0, 0.52, 1.0],
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
-              ),
-              // Content.
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.xl),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Group name + avatar.
-                    Row(
-                      children: [
-                        _GroupAvatar(group: group),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                group.groupName,
-                                style: AppTextStyles.headlineSmall.copyWith(
-                                  color: colorScheme.onPrimary,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.3,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: colorScheme.onPrimary
-                                      .withValues(alpha: 0.8),
-                                ),
-                              ),
+
+                // Soft top rim light.
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 1.5,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          rimColor,
+                          rimColor.withValues(alpha: 0.3),
+                          rimColor,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Floating 3D orbs.
+                Positioned.fill(
+                  child: AnimatedBuilder(
+                    animation: ambientController,
+                    builder: (context, _) {
+                      final t = ambientController.value * 2 * math.pi;
+                      return Stack(
+                        children: [
+                          Positioned(
+                            top: -30 + math.sin(t) * 16,
+                            right: -20 + math.cos(t) * 10,
+                            child: _FloatingOrb(
+                              size: 130,
+                              color: orbColor,
+                              glowColor: orbColor,
+                            ),
+                          ),
+                          Positioned(
+                            bottom: -20 + math.sin(t + 2.5) * 12,
+                            left: -10 + math.cos(t + 2.5) * 8,
+                            child: _FloatingOrb(
+                              size: 90,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.03)
+                                  : Colors.black.withValues(alpha: 0.02),
+                              glowColor: Colors.transparent,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+
+                // Ambient sheen.
+                Positioned.fill(
+                  child: AnimatedBuilder(
+                    animation: ambientController,
+                    builder: (context, _) {
+                      final t = ambientController.value;
+                      final sweepX = -0.4 + 1.8 * t;
+                      return DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment(sweepX, -0.9),
+                            end: Alignment(sweepX + 0.35, 0.9),
+                            colors: [
+                              Colors.transparent,
+                              sheenColor,
+                              Colors.transparent,
                             ],
+                            stops: const [0.0, 0.5, 1.0],
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    // Member avatar row.
-                    _MemberRow(
-                      members: group.members,
-                      onPrimary: colorScheme.onPrimary,
-                    ),
-                  ],
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+
+                // Content.
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Group name + member count.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _GroupAvatar(
+                            group: group,
+                            isDark: isDark,
+                            colorScheme: colorScheme,
+                            ambientController: ambientController,
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  group.groupName,
+                                  style: AppTextStyles.headlineSmall.copyWith(
+                                    color: colorScheme.onSurface,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.3,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.sm,
+                                    vertical: AppSpacing.xxs,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary
+                                        .withValues(alpha: 0.10),
+                                    borderRadius: AppRadius.radiusFull,
+                                    border: Border.all(
+                                      color: colorScheme.primary
+                                          .withValues(alpha: 0.22),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.groups_2_rounded,
+                                        size: 12,
+                                        color: colorScheme.primary,
+                                      ),
+                                      const SizedBox(width: AppSpacing.xxs),
+                                      Text(
+                                        '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                                        style: AppTextStyles.labelSmall.copyWith(
+                                          color: colorScheme.primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      // Member avatar stack.
+                      _MemberRow(
+                        members: group.members,
+                        colorScheme: colorScheme,
+                        isDark: isDark,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -500,10 +648,51 @@ class _GroupHeroHeader extends StatelessWidget {
   }
 }
 
+class _FloatingOrb extends StatelessWidget {
+  const _FloatingOrb({
+    required this.size,
+    required this.color,
+    required this.glowColor,
+  });
+
+  final double size;
+  final Color color;
+  final Color glowColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        boxShadow: glowColor == Colors.transparent
+            ? null
+            : [
+                BoxShadow(
+                  color: glowColor.withValues(alpha: 0.35),
+                  blurRadius: size * 0.35,
+                  spreadRadius: size * 0.05,
+                ),
+              ],
+      ),
+    );
+  }
+}
+
 class _GroupAvatar extends StatelessWidget {
-  const _GroupAvatar({required this.group});
+  const _GroupAvatar({
+    required this.group,
+    required this.isDark,
+    required this.colorScheme,
+    required this.ambientController,
+  });
 
   final Group group;
+  final bool isDark;
+  final ColorScheme colorScheme;
+  final AnimationController ambientController;
 
   @override
   Widget build(BuildContext context) {
@@ -512,38 +701,96 @@ class _GroupAvatar extends StatelessWidget {
         ? group.groupName.characters.first.toUpperCase()
         : '';
 
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        borderRadius: AppRadius.radiusLg,
-        color: Colors.white.withValues(alpha: 0.18),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.25),
-          width: 1.5,
+    final avatarBorder = isDark ? AppColors.darkBackground : AppColors.white;
+    final avatarShadow = isDark
+        ? [
+            BoxShadow(
+              color: colorScheme.primary.withValues(alpha: 0.30),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+              spreadRadius: 2,
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.30),
+              blurRadius: 12,
+              offset: const Offset(0, 8),
+            ),
+          ]
+        : [
+            BoxShadow(
+              color: colorScheme.primary.withValues(alpha: 0.22),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+              spreadRadius: 1,
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 12,
+              offset: const Offset(0, 8),
+            ),
+          ];
+
+    return AnimatedBuilder(
+      animation: ambientController,
+      builder: (context, child) {
+        final t = ambientController.value * 2 * math.pi;
+        final scale = 1.0 + 0.012 * math.sin(t);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: Container(
+        width: 66,
+        height: 66,
+        decoration: BoxDecoration(
+          borderRadius: AppRadius.radiusXl,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDark
+                ? AppColors.darkPrimaryGradient.colors
+                : AppColors.lightPrimaryGradient.colors,
+          ),
+          border: Border.all(
+            color: avatarBorder.withValues(alpha: 0.85),
+            width: 3,
+          ),
+          boxShadow: avatarShadow,
         ),
+        clipBehavior: Clip.antiAlias,
+        child: picture != null && picture.isNotEmpty
+            ? Image.network(
+                picture,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _initial(initial),
+              )
+            : _initial(initial),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: picture != null && picture.isNotEmpty
-          ? Image.network(
-              picture,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _initial(initial),
-            )
-          : _initial(initial),
     );
   }
 
   Widget _initial(String initial) {
     return Center(
       child: initial.isEmpty
-          ? const Icon(Icons.group_rounded, color: Colors.white, size: 26)
-          : Text(
-              initial,
-              style: AppTextStyles.headlineSmall.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                height: 1.0,
+          ? const Icon(Icons.group_rounded, color: Colors.white, size: 28)
+          : Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.25),
+                    Colors.white.withValues(alpha: 0.05),
+                  ],
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  initial,
+                  style: AppTextStyles.headlineMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    height: 1.0,
+                  ),
+                ),
               ),
             ),
     );
@@ -551,17 +798,27 @@ class _GroupAvatar extends StatelessWidget {
 }
 
 class _MemberRow extends StatelessWidget {
-  const _MemberRow({required this.members, required this.onPrimary});
+  const _MemberRow({
+    required this.members,
+    required this.colorScheme,
+    required this.isDark,
+  });
 
   final List<GroupMember> members;
-  final Color onPrimary;
+  final ColorScheme colorScheme;
+  final bool isDark;
 
   static const _avatarColors = [
     AppColors.chartTeal,
     AppColors.chartBlue,
     AppColors.chartPurple,
     AppColors.chartOrange,
+    AppColors.chartPink,
+    AppColors.chartCyan,
   ];
+
+  static const _avatarSize = 36.0;
+  static const _overlap = 10.0;
 
   @override
   Widget build(BuildContext context) {
@@ -569,26 +826,65 @@ class _MemberRow extends StatelessWidget {
 
     final visible = members.take(5).toList();
     final overflow = members.length - visible.length;
+    final totalWidth = (visible.length * _avatarSize) -
+        ((visible.length - 1) * _overlap) +
+        (overflow > 0 ? _avatarSize + AppSpacing.sm : 0);
+    final ringColor = isDark ? AppColors.darkBackground : AppColors.white;
 
     return SizedBox(
-      height: 32,
+      height: _avatarSize + 2,
+      width: math.max(totalWidth, _avatarSize),
       child: Row(
         children: [
-          for (var i = 0; i < visible.length; i++) ...[
-            if (i > 0) const SizedBox(width: AppSpacing.xs),
-            _MemberChip(
-              member: visible[i],
-              color: _avatarColors[i % _avatarColors.length],
-              index: i,
+          SizedBox(
+            width: (visible.length * _avatarSize) -
+                ((visible.length - 1) * _overlap),
+            height: _avatarSize,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                for (var i = 0; i < visible.length; i++)
+                  Positioned(
+                    left: i * (_avatarSize - _overlap),
+                    child: _MemberAvatar(
+                      member: visible[i],
+                      color: _avatarColors[i % _avatarColors.length],
+                      ringColor: ringColor,
+                    ),
+                  ),
+              ],
             ),
-          ],
+          ),
           if (overflow > 0) ...[
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              '+$overflow more',
-              style: AppTextStyles.labelSmall.copyWith(
-                color: onPrimary.withValues(alpha: 0.8),
-                fontWeight: FontWeight.w600,
+            const SizedBox(width: AppSpacing.sm),
+            Container(
+              width: _avatarSize,
+              height: _avatarSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colorScheme.primary,
+                border: Border.all(
+                  color: ringColor,
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black
+                        .withValues(alpha: isDark ? 0.35 : 0.10),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  '+$overflow',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: colorScheme.onPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
               ),
             ),
           ],
@@ -598,16 +894,16 @@ class _MemberRow extends StatelessWidget {
   }
 }
 
-class _MemberChip extends StatelessWidget {
-  const _MemberChip({
+class _MemberAvatar extends StatelessWidget {
+  const _MemberAvatar({
     required this.member,
     required this.color,
-    required this.index,
+    required this.ringColor,
   });
 
   final GroupMember member;
   final Color color;
-  final int index;
+  final Color ringColor;
 
   @override
   Widget build(BuildContext context) {
@@ -618,70 +914,54 @@ class _MemberChip extends StatelessWidget {
     final initial =
         name.isNotEmpty ? name.characters.first.toUpperCase() : '?';
 
-    return Container(
-      padding: const EdgeInsets.only(
-        left: AppSpacing.xxs,
-        right: AppSpacing.sm,
-        top: AppSpacing.xxs,
-        bottom: AppSpacing.xxs,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.15),
-        borderRadius: AppRadius.radiusFull,
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.15),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color,
+    return Tooltip(
+      message: name,
+      child: Container(
+        width: _MemberRow._avatarSize,
+        height: _MemberRow._avatarSize,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: Border.all(
+            color: ringColor.withValues(alpha: 0.85),
+            width: 2.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: picture != null && picture.isNotEmpty
-                ? Image.network(
-                    picture,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
-                      child: Text(
-                        initial,
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          height: 1.0,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                  )
-                : Center(
-                    child: Text(
-                      initial,
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        height: 1.0,
-                        fontSize: 10,
-                      ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: picture != null && picture.isNotEmpty
+            ? Image.network(
+                picture,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Center(
+                  child: Text(
+                    initial,
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                      fontSize: 11,
                     ),
                   ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            name,
-            style: AppTextStyles.labelSmall.copyWith(
-              color: Colors.white.withValues(alpha: 0.95),
-              fontWeight: FontWeight.w600,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+                ),
+              )
+            : Center(
+                child: Text(
+                  initial,
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    height: 1.0,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
       ),
     );
   }

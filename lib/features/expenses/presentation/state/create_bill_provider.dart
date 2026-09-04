@@ -36,6 +36,41 @@ class CreateBillError extends CreateBillState {
 // Immutable form model held by the notifier
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Holds the local state for a single payment method entry on the form.
+class PaymentMethodEntry {
+  const PaymentMethodEntry({
+    required this.method,
+    this.qrPhotoPath,
+    this.bankName,
+  });
+
+  final BillPaymentMethod method;
+
+  /// Local file path of the picked QR code image (before upload).
+  final String? qrPhotoPath;
+
+  /// Selected bank name (only relevant for [BillPaymentMethod.bank]).
+  final String? bankName;
+
+  PaymentMethodEntry copyWith({
+    BillPaymentMethod? method,
+    Object? qrPhotoPath = _kPaySentinel,
+    Object? bankName = _kPaySentinel,
+  }) {
+    return PaymentMethodEntry(
+      method: method ?? this.method,
+      qrPhotoPath: qrPhotoPath == _kPaySentinel
+          ? this.qrPhotoPath
+          : qrPhotoPath as String?,
+      bankName: bankName == _kPaySentinel
+          ? this.bankName
+          : bankName as String?,
+    );
+  }
+}
+
+const Object _kPaySentinel = Object();
+
 class CreateBillFormState {
   const CreateBillFormState({
     this.amount = 0.0,
@@ -49,6 +84,12 @@ class CreateBillFormState {
     this.amountError,
     this.participantsError,
     this.customSplitError,
+    this.paymentEntries = const [],
+    this.uploadingQrMethod,
+    this.titleError,
+    this.noteError,
+    this.dateError,
+    this.paymentMethodError,
   });
 
   final double amount;
@@ -68,6 +109,17 @@ class CreateBillFormState {
   final String? amountError;
   final String? participantsError;
   final String? customSplitError;
+  final String? titleError;
+  final String? noteError;
+  final String? dateError;
+  final String? paymentMethodError;
+
+  /// Payment method entries chosen by the user.
+  final List<PaymentMethodEntry> paymentEntries;
+
+  /// The payment method currently being uploaded (null = none).
+  /// This is per-method so only the relevant entry shows a loading state.
+  final BillPaymentMethod? uploadingQrMethod;
 
   // ── Computed ────────────────────────────────────────────────────────────
 
@@ -91,6 +143,12 @@ class CreateBillFormState {
       final diff = (customSharesTotal - amount).abs();
       if (diff > AppConstants.splitRoundingTolerance) return false;
     }
+    // Quick Info required fields (except Add Photo).
+    if (title.trim().isEmpty) return false;
+    if (note.trim().isEmpty) return false;
+    if (date == null) return false;
+    // At least one payment option is required.
+    if (paymentEntries.isEmpty) return false;
     return true;
   }
 
@@ -106,6 +164,12 @@ class CreateBillFormState {
     Object? amountError = _kSentinel,
     Object? participantsError = _kSentinel,
     Object? customSplitError = _kSentinel,
+    List<PaymentMethodEntry>? paymentEntries,
+    Object? uploadingQrMethod = _kSentinel,
+    Object? titleError = _kSentinel,
+    Object? noteError = _kSentinel,
+    Object? dateError = _kSentinel,
+    Object? paymentMethodError = _kSentinel,
   }) {
     return CreateBillFormState(
       amount: amount ?? this.amount,
@@ -127,6 +191,22 @@ class CreateBillFormState {
       customSplitError: customSplitError == _kSentinel
           ? this.customSplitError
           : customSplitError as String?,
+      paymentEntries: paymentEntries ?? this.paymentEntries,
+      uploadingQrMethod: uploadingQrMethod == _kSentinel
+          ? this.uploadingQrMethod
+          : uploadingQrMethod as BillPaymentMethod?,
+      titleError: titleError == _kSentinel
+          ? this.titleError
+          : titleError as String?,
+      noteError: noteError == _kSentinel
+          ? this.noteError
+          : noteError as String?,
+      dateError: dateError == _kSentinel
+          ? this.dateError
+          : dateError as String?,
+      paymentMethodError: paymentMethodError == _kSentinel
+          ? this.paymentMethodError
+          : paymentMethodError as String?,
     );
   }
 }
@@ -186,16 +266,67 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
     );
   }
 
-  void setTitle(String title) => state = state.copyWith(title: title);
+  void setTitle(String title) =>
+      state = state.copyWith(title: title, titleError: null);
 
-  void setNote(String note) => state = state.copyWith(note: note);
+  void setNote(String note) =>
+      state = state.copyWith(note: note, noteError: null);
 
-  void setDate(DateTime date) => state = state.copyWith(date: date);
+  void setDate(DateTime date) =>
+      state = state.copyWith(date: date, dateError: null);
 
   void clearDate() => state = state.copyWith(date: null);
 
   void setReceiptPhoto(String? path) =>
       state = state.copyWith(receiptPhotoPath: path);
+
+  // ── Payment methods ──────────────────────────────────────────────────────
+
+  /// Adds a payment method entry if not already present.
+  void addPaymentMethod(BillPaymentMethod method) {
+    final already = state.paymentEntries.any((e) => e.method == method);
+    if (already) return;
+    state = state.copyWith(
+      paymentEntries: [
+        ...state.paymentEntries,
+        PaymentMethodEntry(method: method),
+      ],
+      paymentMethodError: null,
+    );
+  }
+
+  /// Removes a payment method entry.
+  void removePaymentMethod(BillPaymentMethod method) {
+    state = state.copyWith(
+      paymentEntries:
+          state.paymentEntries.where((e) => e.method != method).toList(),
+    );
+  }
+
+  /// Updates the QR code local file path for the given payment method.
+  void setQrPhotoPath(BillPaymentMethod method, String? path) {
+    state = state.copyWith(
+      paymentEntries: state.paymentEntries.map((e) {
+        if (e.method == method) return e.copyWith(qrPhotoPath: path);
+        return e;
+      }).toList(),
+    );
+  }
+
+  /// Updates the selected bank name for a bank payment method entry.
+  void setBankName(String? bankName) {
+    state = state.copyWith(
+      paymentEntries: state.paymentEntries.map((e) {
+        if (e.method == BillPaymentMethod.bank) {
+          return e.copyWith(bankName: bankName);
+        }
+        return e;
+      }).toList(),
+    );
+  }
+
+  void setUploadingQr(BillPaymentMethod? method) =>
+      state = state.copyWith(uploadingQrMethod: method);
 
   void setSplitMode(BillSplitMode mode) {
     state = state.copyWith(splitMode: mode, customSplitError: null);
@@ -246,11 +377,45 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
   /// Validates the full form and returns the first blocking error message,
   /// or `null` if the form is valid.
   String? validate() {
+    // Clear previous errors.
+    state = state.copyWith(
+      titleError: null,
+      noteError: null,
+      dateError: null,
+      paymentMethodError: null,
+    );
+
     if (state.amount <= 0) {
       state = state.copyWith(
         amountError: 'Please enter a bill amount greater than zero.',
       );
       return state.amountError;
+    }
+    // Quick Info required fields (except Add Photo).
+    if (state.title.trim().isEmpty) {
+      state = state.copyWith(
+        titleError: 'Please add a bill title.',
+      );
+      return state.titleError;
+    }
+    if (state.note.trim().isEmpty) {
+      state = state.copyWith(
+        noteError: 'Please add a note.',
+      );
+      return state.noteError;
+    }
+    if (state.date == null) {
+      state = state.copyWith(
+        dateError: 'Please select a date.',
+      );
+      return state.dateError;
+    }
+    // At least one payment option is required.
+    if (state.paymentEntries.isEmpty) {
+      state = state.copyWith(
+        paymentMethodError: 'Please select at least one payment option.',
+      );
+      return state.paymentMethodError;
     }
     if (state.includedCount == 0) {
       state = state.copyWith(
@@ -278,6 +443,13 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
     if (error != null) return null;
 
     final now = DateTime.now();
+
+    // Extract payment data — QR URLs are uploaded later in SaveBillNotifier.
+    final methods = state.paymentEntries.map((e) => e.method).toList();
+    final bankEntry = state.paymentEntries
+        .cast<PaymentMethodEntry?>()
+        .firstWhere((e) => e?.method == BillPaymentMethod.bank, orElse: () => null);
+
     return Bill(
       id: '',
       groupId: groupId,
@@ -295,6 +467,9 @@ class CreateBillNotifier extends StateNotifier<CreateBillFormState> {
           .where((p) => !p.isIncluded)
           .map((p) => p.id)
           .toList(),
+      paymentMethods: methods,
+      paymentQrUrls: const [], // Set after Cloudinary upload in SaveBillNotifier
+      selectedBankName: bankEntry?.bankName,
     );
   }
 

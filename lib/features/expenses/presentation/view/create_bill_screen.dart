@@ -11,6 +11,7 @@ import '../../../groups/domain/entities/group.dart';
 import '../../domain/entities/bill.dart';
 import '../state/bill_providers.dart';
 import '../state/create_bill_provider.dart';
+import '../widget/payment_options_card.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Quick Info inline editing field
@@ -167,6 +168,47 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
 
   void _cancelAmountEdit() {
     setState(() => _isEditingAmount = false);
+  }
+
+  // ── QR code photo ─────────────────────────────────────────────────────────
+
+  Future<void> _pickQrPhoto(BillPaymentMethod method) async {
+    // Guard against concurrent ImagePicker calls — Android only allows
+    // one activity-result at a time.  If another method is already being
+    // picked, ignore the tap.
+    if (_form.uploadingQrMethod != null) return;
+
+    _notifier.setUploadingQr(method);
+    try {
+      final xFile = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 90,
+      );
+      if (xFile == null) return;
+      _notifier.setQrPhotoPath(method, xFile.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not open the gallery. Please try again.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Theme.of(context).colorScheme.onPrimary,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      // Always clear the uploading state — even if the widget unmounted,
+      // the notifier is still valid (it's owned by the provider, not the
+      // widget).  This prevents the loading spinner from getting stuck.
+      _notifier.setUploadingQr(null);
+    }
   }
 
   // ── Receipt photo ──────────────────────────────────────────────────────────
@@ -328,6 +370,7 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
     final ok = await saveNotifier.saveBill(
       bill: bill,
       receiptPhotoPath: _form.receiptPhotoPath,
+      paymentEntries: _form.paymentEntries,
     );
 
     if (!mounted) return;
@@ -409,6 +452,22 @@ class _CreateBillScreenState extends ConsumerState<CreateBillScreen>
                         onCancelAmount: _cancelAmountEdit,
                       ),
                       0.04, 0.28,
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    // ── Payment options ──────────────────────────────────
+                    _stagger(
+                      PaymentOptionsCard(
+                        paymentEntries: _form.paymentEntries,
+                        colorScheme: colorScheme,
+                        isDark: isDark,
+                        uploadingQrMethod: _form.uploadingQrMethod,
+                        paymentMethodError: _form.paymentMethodError,
+                        onAddMethod: _notifier.addPaymentMethod,
+                        onRemoveMethod: _notifier.removePaymentMethod,
+                        onPickQr: _pickQrPhoto,
+                        onBankNameChanged: _notifier.setBankName,
+                      ),
+                      0.14, 0.32,
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     // ── Quick info row ───────────────────────────────────
@@ -1369,6 +1428,7 @@ class _QuickInfoChips extends StatelessWidget {
           sublabel: form.title.isNotEmpty ? 'Added' : "What's this for?",
           color: AppColors.chartBlue,
           isDone: form.title.isNotEmpty,
+          isRequired: true,
           colorScheme: colorScheme,
           isDark: isDark,
           onTap: onAddTitle,
@@ -1381,6 +1441,7 @@ class _QuickInfoChips extends StatelessWidget {
           sublabel: form.note.isNotEmpty ? 'Added' : 'Any details?',
           color: AppColors.chartPurple,
           isDone: form.note.isNotEmpty,
+          isRequired: true,
           colorScheme: colorScheme,
           isDark: isDark,
           onTap: onAddNote,
@@ -1393,6 +1454,7 @@ class _QuickInfoChips extends StatelessWidget {
           sublabel: form.date != null ? 'Set' : 'When was this?',
           color: AppColors.chartPurple.withValues(alpha: 0.7),
           isDone: form.date != null,
+          isRequired: true,
           colorScheme: colorScheme,
           isDark: isDark,
           onTap: onSelectDate,
@@ -1575,6 +1637,7 @@ class _QuickInfoChip extends StatelessWidget {
     required this.colorScheme,
     required this.isDark,
     required this.onTap,
+    this.isRequired = false,
   });
 
   final IconData icon;
@@ -1586,8 +1649,14 @@ class _QuickInfoChip extends StatelessWidget {
   final bool isDark;
   final VoidCallback onTap;
 
+  /// Whether this field is required.  When true and [isDone] is false,
+  /// a small red dot is shown on the icon circle to indicate it's needed.
+  final bool isRequired;
+
   @override
   Widget build(BuildContext context) {
+    final showRequiredDot = isRequired && !isDone;
+
     return _AnimatedTapScale(
       onTap: onTap,
       child: SizedBox(
@@ -1605,10 +1674,12 @@ class _QuickInfoChip extends StatelessWidget {
                     : colorScheme.surfaceContainerHighest,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isDone
-                      ? color.withValues(alpha: 0.4)
-                      : colorScheme.outlineVariant.withValues(alpha: 0.5),
-                  width: isDone ? 1.5 : 1.0,
+                  color: showRequiredDot
+                      ? colorScheme.error.withValues(alpha: 0.5)
+                      : isDone
+                          ? color.withValues(alpha: 0.4)
+                          : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  width: showRequiredDot || isDone ? 1.5 : 1.0,
                 ),
               ),
               child: Stack(
@@ -1616,7 +1687,9 @@ class _QuickInfoChip extends StatelessWidget {
                 children: [
                   Icon(
                     icon,
-                    color: isDone ? color : colorScheme.onSurfaceVariant,
+                    color: showRequiredDot
+                        ? colorScheme.error
+                        : isDone ? color : colorScheme.onSurfaceVariant,
                     size: 24,
                   ),
                   if (isDone)
@@ -1634,6 +1707,24 @@ class _QuickInfoChip extends StatelessWidget {
                           Icons.check,
                           size: 8,
                           color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  // Required indicator — small red dot top-right
+                  if (showRequiredDot)
+                    Positioned(
+                      right: 4,
+                      top: 4,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: colorScheme.error,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: colorScheme.surface,
+                            width: 1.5,
+                          ),
                         ),
                       ),
                     ),
@@ -1655,7 +1746,9 @@ class _QuickInfoChip extends StatelessWidget {
             Text(
               sublabel,
               style: AppTextStyles.caption.copyWith(
-                color: colorScheme.onSurfaceVariant,
+                color: showRequiredDot
+                    ? colorScheme.error.withValues(alpha: 0.8)
+                    : colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,
@@ -4021,6 +4114,16 @@ class _ReviewSheetState extends State<_ReviewSheet> {
                     const SizedBox(height: AppSpacing.xl),
                   ],
 
+                  // Payment methods section.
+                  if (form.paymentEntries.isNotEmpty) ...[
+                    _ReviewPaymentSection(
+                      entries: form.paymentEntries,
+                      colorScheme: colorScheme,
+                      isDark: isDark,
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                  ],
+
                   // Split mode chip.
                   Row(
                     children: [
@@ -4175,6 +4278,504 @@ class _ReviewSheetState extends State<_ReviewSheet> {
     );
   }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Review sheet — Payment Methods section
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _ReviewPaymentSection extends StatefulWidget {
+  const _ReviewPaymentSection({
+    required this.entries,
+    required this.colorScheme,
+    required this.isDark,
+  });
+
+  final List<PaymentMethodEntry> entries;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  State<_ReviewPaymentSection> createState() => _ReviewPaymentSectionState();
+}
+
+class _ReviewPaymentSectionState extends State<_ReviewPaymentSection>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = widget.colorScheme;
+    final isDark = widget.isDark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Section header ──────────────────────────────────────────
+        Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF10B981).withValues(alpha: 0.25),
+                    const Color(0xFF10B981).withValues(alpha: 0.10),
+                  ],
+                ),
+                borderRadius: AppRadius.radiusSm,
+                border: Border.all(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                ),
+              ),
+              child: const Icon(
+                Icons.payment_rounded,
+                size: 17,
+                color: Color(0xFF10B981),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              'Payment Methods',
+              style: AppTextStyles.labelLarge.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            // method count badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                borderRadius: AppRadius.radiusFull,
+              ),
+              child: Text(
+                '${widget.entries.length}',
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: const Color(0xFF10B981),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+
+        // ── Method cards ────────────────────────────────────────────
+        ...widget.entries.asMap().entries.map((mapEntry) {
+          final idx = mapEntry.key;
+          final entry = mapEntry.value;
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: idx < widget.entries.length - 1 ? AppSpacing.sm : 0,
+            ),
+            child: _ReviewPaymentMethodCard(
+              entry: entry,
+              colorScheme: cs,
+              isDark: isDark,
+              shimmerController: _shimmer,
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+// ── Individual payment method card in the review sheet ───────────────────────
+
+class _ReviewPaymentMethodCard extends StatelessWidget {
+  const _ReviewPaymentMethodCard({
+    required this.entry,
+    required this.colorScheme,
+    required this.isDark,
+    required this.shimmerController,
+  });
+
+  final PaymentMethodEntry entry;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final AnimationController shimmerController;
+
+  Color get _accent {
+    return switch (entry.method) {
+      BillPaymentMethod.esewa => const Color(0xFF60BB46),
+      BillPaymentMethod.khalti => const Color(0xFF5C2D91),
+      BillPaymentMethod.bank => AppColors.chartBlue,
+    };
+  }
+
+  String get _label {
+    return switch (entry.method) {
+      BillPaymentMethod.esewa => 'eSewa',
+      BillPaymentMethod.khalti => 'Khalti',
+      BillPaymentMethod.bank => 'Bank Transfer',
+    };
+  }
+
+  String? get _logoAsset {
+    return switch (entry.method) {
+      BillPaymentMethod.esewa => 'assets/images/esewa.png',
+      BillPaymentMethod.khalti => 'assets/images/khalti.png',
+      BillPaymentMethod.bank => null,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasQr = entry.qrPhotoPath != null;
+    final hasBank = entry.method == BillPaymentMethod.bank;
+    final accent = _accent;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppRadius.radiusLg,
+        border: Border.all(
+          color: accent.withValues(alpha: isDark ? 0.35 : 0.25),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: isDark ? 0.08 : 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // ── Method header bar ───────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm + 2,
+            ),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: isDark ? 0.12 : 0.07),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(AppRadius.lg),
+                topRight: Radius.circular(AppRadius.lg),
+              ),
+            ),
+            child: Row(
+              children: [
+                // Logo / icon
+                _buildLogo(accent),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  _label,
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const Spacer(),
+                // Ready badge
+                AnimatedBuilder(
+                  animation: shimmerController,
+                  builder: (_, child) {
+                    final t = shimmerController.value;
+                    final pulse = (1 - math.cos(2 * math.pi * t)) * 0.5;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(
+                          alpha: 0.10 + 0.08 * pulse,
+                        ),
+                        borderRadius: AppRadius.radiusFull,
+                        border: Border.all(
+                          color: AppColors.success.withValues(
+                            alpha: 0.25 + 0.20 * pulse,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle_rounded,
+                            size: 10,
+                            color: AppColors.success,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Added',
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: AppColors.success,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          // ── Body — bank + QR side by side (or stacked) ──────────
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left: bank name (only for bank) + QR code
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasBank) ...[
+                        // Bank name row
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.account_balance_rounded,
+                              size: 13,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Bank',
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 10.5,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(
+                              alpha: isDark ? 0.10 : 0.06,
+                            ),
+                            borderRadius: AppRadius.radiusSm,
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Text(
+                            entry.bankName ?? 'Not selected',
+                            style: AppTextStyles.labelMedium.copyWith(
+                              color: entry.bankName != null
+                                  ? colorScheme.onSurface
+                                  : colorScheme.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (hasQr) const SizedBox(height: AppSpacing.md),
+                      ],
+                      if (hasQr) ...[
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.qr_code_2_rounded,
+                              size: 13,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'QR Code',
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 10.5,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        _QrThumbnail(
+                          path: entry.qrPhotoPath!,
+                          accent: accent,
+                          isDark: isDark,
+                        ),
+                      ] else if (!hasBank) ...[
+                        // No QR, no bank — show placeholder
+                        Container(
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.4),
+                            borderRadius: AppRadius.radiusMd,
+                            border: Border.all(
+                              color: colorScheme.outlineVariant
+                                  .withValues(alpha: 0.3),
+                              style: BorderStyle.solid,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'No QR code attached',
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.5),
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogo(Color accent) {
+    final asset = _logoAsset;
+    if (asset != null) {
+      return Image.asset(
+        asset,
+        width: 22,
+        height: 22,
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.payment_rounded,
+          size: 20,
+          color: accent,
+        ),
+      );
+    }
+    return Icon(Icons.account_balance_rounded, size: 20, color: accent);
+  }
+}
+
+// ── QR thumbnail shown inside the review card ────────────────────────────────
+
+class _QrThumbnail extends StatelessWidget {
+  const _QrThumbnail({
+    required this.path,
+    required this.accent,
+    required this.isDark,
+  });
+
+  final String path;
+  final Color accent;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 110,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: AppRadius.radiusMd,
+        border: Border.all(
+          color: accent.withValues(alpha: 0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: isDark ? 0.10 : 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: AppRadius.radiusMd,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: Image.file(
+                io.File(path),
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image_outlined, size: 28),
+                ),
+              ),
+            ),
+            // subtle bottom gradient overlay for depth
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 28,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      accent.withValues(alpha: 0.12),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // ✓ badge
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: AppColors.success,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.success.withValues(alpha: 0.4),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  size: 9,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _ReviewParticipantRow extends StatelessWidget {
   const _ReviewParticipantRow({

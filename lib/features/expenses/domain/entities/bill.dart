@@ -96,6 +96,18 @@ class BillParticipant {
   }
 }
 
+/// Supported payment methods for a bill.
+enum BillPaymentMethod {
+  /// eSewa digital wallet.
+  esewa,
+
+  /// Khalti digital wallet.
+  khalti,
+
+  /// Bank transfer (with a selected bank name).
+  bank,
+}
+
 /// Domain entity representing a bill / shared expense within a group.
 ///
 /// This is a pure Dart class with no Flutter or Firebase dependencies so it
@@ -121,6 +133,9 @@ class Bill {
     this.paymentStatus = BillPaymentStatus.unpaid,
     this.realExpenseMadeBy,
     this.excludedMemberIds = const [],
+    this.paymentMethods = const [],
+    this.paymentQrUrls = const [],
+    this.selectedBankName,
   });
 
   /// Firestore document ID of the bill (auto-generated on create).
@@ -175,6 +190,17 @@ class Bill {
 
   /// UIDs of members excluded from this bill's split.
   final List<String> excludedMemberIds;
+
+  /// Payment methods chosen for this bill (can be multiple).
+  final List<BillPaymentMethod> paymentMethods;
+
+  /// Cloudinary URLs of QR code images, parallel to [paymentMethods].
+  /// Each entry corresponds to the QR code for the same-indexed payment method.
+  final List<String> paymentQrUrls;
+
+  /// The name of the selected bank (only relevant when [paymentMethods]
+  /// contains [BillPaymentMethod.bank]).
+  final String? selectedBankName;
 
   // ── Convenience getters ──────────────────────────────────────────────────
 
@@ -233,6 +259,9 @@ class Bill {
     BillPaymentStatus? paymentStatus,
     Map<String, dynamic>? realExpenseMadeBy,
     List<String>? excludedMemberIds,
+    List<BillPaymentMethod>? paymentMethods,
+    List<String>? paymentQrUrls,
+    Object? selectedBankName = _kBillSentinel,
   }) {
     return Bill(
       id: id ?? this.id,
@@ -251,6 +280,13 @@ class Bill {
       paymentStatus: paymentStatus ?? this.paymentStatus,
       realExpenseMadeBy: realExpenseMadeBy ?? this.realExpenseMadeBy,
       excludedMemberIds: excludedMemberIds ?? this.excludedMemberIds,
+      paymentMethods: paymentMethods ?? this.paymentMethods,
+      paymentQrUrls: paymentQrUrls ?? this.paymentQrUrls,
+      selectedBankName: selectedBankName == _kBillSentinel
+          ? this.selectedBankName
+          : selectedBankName as String?,
     );
   }
 }
+
+const Object _kBillSentinel = Object();
