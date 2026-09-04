@@ -101,22 +101,15 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
           ),
           slivers: billsAsync.when(
             data: (bills) => [
-              // ── App bar ─────────────────────────────────────────────────
+              // ── App bar with group info ────────────────────────────────
               SliverToBoxAdapter(
                 child: _TopBar(
                   group: widget.group,
                   colorScheme: colorScheme,
-                  onBack: () => Navigator.of(context).pop(),
-                ),
-              ),
-              // ── Group hero header ───────────────────────────────────────
-              SliverToBoxAdapter(
-                child: _GroupHeroHeader(
-                  group: widget.group,
+                  isDark: isDark,
                   entranceController: _entranceController,
                   ambientController: _ambientController,
-                  colorScheme: colorScheme,
-                  isDark: isDark,
+                  onCreateBill: _openCreateBill,
                 ),
               ),
               // ── Stats row ───────────────────────────────────────────────
@@ -195,7 +188,10 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
                 child: _TopBar(
                   group: widget.group,
                   colorScheme: colorScheme,
-                  onBack: () => Navigator.of(context).pop(),
+                  isDark: isDark,
+                  entranceController: _entranceController,
+                  ambientController: _ambientController,
+                  onCreateBill: _openCreateBill,
                 ),
               ),
               SliverFillRemaining(
@@ -209,20 +205,6 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
               ),
             ],
           ),
-        ),
-      ),
-      // ── Floating create-bill FAB ────────────────────────────────────────
-      floatingActionButton: StaggeredEntrance(
-        animation: _entranceController,
-        interval: const Interval(0.5, 0.85, curve: Curves.easeOutBack),
-        slideOffset: 40,
-        child: FloatingActionButton.extended(
-          onPressed: _openCreateBill,
-          icon: const Icon(Icons.receipt_long_rounded, size: 22),
-          label: const Text('Create Bill'),
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
-          elevation: 4,
         ),
       ),
     );
@@ -289,516 +271,203 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.group,
     required this.colorScheme,
-    required this.onBack,
+    required this.isDark,
+    required this.entranceController,
+    required this.ambientController,
+    required this.onCreateBill,
   });
 
   final Group group;
   final ColorScheme colorScheme;
-  final VoidCallback onBack;
+  final bool isDark;
+  final AnimationController entranceController;
+  final AnimationController ambientController;
+  final VoidCallback onCreateBill;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.sm,
-      ),
-      child: Row(
-        children: [
-          _CircleButton(
-            icon: Icons.arrow_back_rounded,
-            colorScheme: colorScheme,
-            onTap: onBack,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              group.groupName,
-              style: AppTextStyles.titleMedium.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w700,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    return StaggeredEntrance(
+      animation: entranceController,
+      interval: const Interval(0.0, 0.35, curve: Curves.easeOutCubic),
+      slideOffset: 20,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.screenHorizontal,
+          AppSpacing.sm,
+          AppSpacing.screenHorizontal,
+          AppSpacing.xs,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Row 1: group name + animated create-bill button.
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    group.groupName,
+                    style: AppTextStyles.headlineSmall.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                _AnimatedCreateBillButton(
+                  ambientController: ambientController,
+                  colorScheme: colorScheme,
+                  onTap: onCreateBill,
+                ),
+              ],
             ),
-          ),
-          _CircleButton(
-            icon: Icons.more_horiz_rounded,
-            colorScheme: colorScheme,
-            onTap: () {},
-          ),
-        ],
+            const SizedBox(height: AppSpacing.xxs),
+            // Row 2: member count text.
+            Row(
+              children: [
+                Icon(
+                  Icons.groups_2_rounded,
+                  size: 20,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                Text(
+                  '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.65),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            if (group.members.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xs),
+              _TopBarAvatarStack(
+                members: group.members,
+                colorScheme: colorScheme,
+                isDark: isDark,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+          ],
+        ),
       ),
     );
   }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Circle button
+// Animated create-bill button — cycles between add icon and "Create Bill"
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _CircleButton extends StatelessWidget {
-  const _CircleButton({
-    required this.icon,
+class _AnimatedCreateBillButton extends StatelessWidget {
+  const _AnimatedCreateBillButton({
+    required this.ambientController,
     required this.colorScheme,
     required this.onTap,
   });
 
-  final IconData icon;
+  final AnimationController ambientController;
   final ColorScheme colorScheme;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          child: Icon(
-            icon,
-            color: colorScheme.onSurface,
-            size: 22,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Group hero header
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _GroupHeroHeader extends StatelessWidget {
-  const _GroupHeroHeader({
-    required this.group,
-    required this.entranceController,
-    required this.ambientController,
-    required this.colorScheme,
-    required this.isDark,
-  });
-
-  final Group group;
-  final AnimationController entranceController;
-  final AnimationController ambientController;
-  final ColorScheme colorScheme;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    final cardBg = isDark ? AppColors.darkBackground : AppColors.white;
-    final bevelHi = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.white.withValues(alpha: 0.65);
-    final bevelLo = isDark
-        ? Colors.black.withValues(alpha: 0.30)
-        : Colors.black.withValues(alpha: 0.03);
-    final sheenColor = isDark
-        ? colorScheme.primary.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.30);
-    final orbColor = isDark
-        ? colorScheme.primary.withValues(alpha: 0.08)
-        : colorScheme.primary.withValues(alpha: 0.05);
-    final rimColor = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.85);
-    final borderColor = isDark
-        ? colorScheme.outlineVariant.withValues(alpha: 0.25)
-        : colorScheme.outlineVariant.withValues(alpha: 0.50);
-    final cardShadow = isDark
-        ? [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.40),
-              blurRadius: 28,
-              offset: const Offset(0, 14),
-              spreadRadius: -2,
-            ),
-            BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.15),
-              blurRadius: 32,
-              offset: const Offset(0, 10),
-            ),
-          ]
-        : [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.07),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-              spreadRadius: -2,
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.035),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ];
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.screenHorizontal,
-        AppSpacing.sm,
-        AppSpacing.screenHorizontal,
-        AppSpacing.md,
-      ),
-      child: StaggeredEntrance(
-        animation: entranceController,
-        interval: const Interval(0.05, 0.45, curve: Curves.easeOutCubic),
-        slideOffset: 28,
-        child: Container(
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: AppRadius.radiusXxl,
-            border: Border.all(color: borderColor, width: 1.5),
-            boxShadow: cardShadow,
-          ),
-          child: ClipRRect(
-            borderRadius: AppRadius.radiusXxl,
-            child: Stack(
-              children: [
-                // 3D bevel / surface lighting overlay.
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          bevelHi,
-                          Colors.transparent,
-                          bevelLo,
-                        ],
-                        stops: const [0.0, 0.52, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Soft top rim light.
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 1.5,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [
-                          rimColor,
-                          rimColor.withValues(alpha: 0.3),
-                          rimColor,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Floating 3D orbs.
-                Positioned.fill(
-                  child: AnimatedBuilder(
-                    animation: ambientController,
-                    builder: (context, _) {
-                      final t = ambientController.value * 2 * math.pi;
-                      return Stack(
-                        children: [
-                          Positioned(
-                            top: -30 + math.sin(t) * 16,
-                            right: -20 + math.cos(t) * 10,
-                            child: _FloatingOrb(
-                              size: 130,
-                              color: orbColor,
-                              glowColor: orbColor,
-                            ),
-                          ),
-                          Positioned(
-                            bottom: -20 + math.sin(t + 2.5) * 12,
-                            left: -10 + math.cos(t + 2.5) * 8,
-                            child: _FloatingOrb(
-                              size: 90,
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.03)
-                                  : Colors.black.withValues(alpha: 0.02),
-                              glowColor: Colors.transparent,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-
-                // Ambient sheen.
-                Positioned.fill(
-                  child: AnimatedBuilder(
-                    animation: ambientController,
-                    builder: (context, _) {
-                      final t = ambientController.value;
-                      final sweepX = -0.4 + 1.8 * t;
-                      return DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment(sweepX, -0.9),
-                            end: Alignment(sweepX + 0.35, 0.9),
-                            colors: [
-                              Colors.transparent,
-                              sheenColor,
-                              Colors.transparent,
-                            ],
-                            stops: const [0.0, 0.5, 1.0],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // Content.
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Group name + member count.
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _GroupAvatar(
-                            group: group,
-                            isDark: isDark,
-                            colorScheme: colorScheme,
-                            ambientController: ambientController,
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  group.groupName,
-                                  style: AppTextStyles.headlineSmall.copyWith(
-                                    color: colorScheme.onSurface,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.3,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: AppSpacing.xs),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.sm,
-                                    vertical: AppSpacing.xxs,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primary
-                                        .withValues(alpha: 0.10),
-                                    borderRadius: AppRadius.radiusFull,
-                                    border: Border.all(
-                                      color: colorScheme.primary
-                                          .withValues(alpha: 0.22),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.groups_2_rounded,
-                                        size: 12,
-                                        color: colorScheme.primary,
-                                      ),
-                                      const SizedBox(width: AppSpacing.xxs),
-                                      Text(
-                                        '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
-                                        style: AppTextStyles.labelSmall.copyWith(
-                                          color: colorScheme.primary,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      // Member avatar stack.
-                      _MemberRow(
-                        members: group.members,
-                        colorScheme: colorScheme,
-                        isDark: isDark,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FloatingOrb extends StatelessWidget {
-  const _FloatingOrb({
-    required this.size,
-    required this.color,
-    required this.glowColor,
-  });
-
-  final double size;
-  final Color color;
-  final Color glowColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        boxShadow: glowColor == Colors.transparent
-            ? null
-            : [
-                BoxShadow(
-                  color: glowColor.withValues(alpha: 0.35),
-                  blurRadius: size * 0.35,
-                  spreadRadius: size * 0.05,
-                ),
-              ],
-      ),
-    );
-  }
-}
-
-class _GroupAvatar extends StatelessWidget {
-  const _GroupAvatar({
-    required this.group,
-    required this.isDark,
-    required this.colorScheme,
-    required this.ambientController,
-  });
-
-  final Group group;
-  final bool isDark;
-  final ColorScheme colorScheme;
-  final AnimationController ambientController;
-
-  @override
-  Widget build(BuildContext context) {
-    final picture = group.groupPicture;
-    final initial = group.groupName.isNotEmpty
-        ? group.groupName.characters.first.toUpperCase()
-        : '';
-
-    final avatarBorder = isDark ? AppColors.darkBackground : AppColors.white;
-    final avatarShadow = isDark
-        ? [
-            BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.30),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-              spreadRadius: 2,
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.30),
-              blurRadius: 12,
-              offset: const Offset(0, 8),
-            ),
-          ]
-        : [
-            BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.22),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-              spreadRadius: 1,
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 12,
-              offset: const Offset(0, 8),
-            ),
-          ];
-
     return AnimatedBuilder(
       animation: ambientController,
-      builder: (context, child) {
-        final t = ambientController.value * 2 * math.pi;
-        final scale = 1.0 + 0.012 * math.sin(t);
-        return Transform.scale(scale: scale, child: child);
-      },
-      child: Container(
-        width: 66,
-        height: 66,
-        decoration: BoxDecoration(
-          borderRadius: AppRadius.radiusXl,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? AppColors.darkPrimaryGradient.colors
-                : AppColors.lightPrimaryGradient.colors,
-          ),
-          border: Border.all(
-            color: avatarBorder.withValues(alpha: 0.85),
-            width: 3,
-          ),
-          boxShadow: avatarShadow,
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: picture != null && picture.isNotEmpty
-            ? Image.network(
-                picture,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _initial(initial),
-              )
-            : _initial(initial),
-      ),
-    );
-  }
+      builder: (context, _) {
+        final t = ambientController.value;
+        final showText = t > 0.5;
 
-  Widget _initial(String initial) {
-    return Center(
-      child: initial.isEmpty
-          ? const Icon(Icons.group_rounded, color: Colors.white, size: 28)
-          : Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.25),
-                    Colors.white.withValues(alpha: 0.05),
-                  ],
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  initial,
-                  style: AppTextStyles.headlineMedium.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    height: 1.0,
+        // Smooth progress values for animation.
+        final expandProgress = showText
+            ? ((t - 0.45) / 0.15).clamp(0.0, 1.0)
+            : ((0.55 - t) / 0.15).clamp(0.0, 1.0);
+        final collapseProgress = 1.0 - expandProgress;
+
+        // Add icon fades and slides right as it disappears.
+        final addOpacity = collapseProgress;
+        final addSlideX = expandProgress * 0.5;
+
+        // Content slides in from right + fades in.
+        final contentOpacity = expandProgress;
+        final contentSlideX = (1.0 - expandProgress) * 1.0;
+
+        final scale = 1.0 + 0.06 * math.sin(t * 2 * math.pi);
+
+        // Width animates from icon-only to full content.
+        final iconWidth = 28.0;
+        final contentWidth = 120.0;
+        final width = iconWidth + (contentWidth - iconWidth) * expandProgress;
+
+        return GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: ClipRect(
+            child: SizedBox(
+              height: 36,
+              width: width,
+              child: Stack(
+                alignment: Alignment.centerRight,
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  // Add icon (compact state) — anchored right, slides right as it exits.
+                  Opacity(
+                    opacity: addOpacity,
+                    child: Transform.translate(
+                      offset: Offset(addSlideX * 30, 0),
+                      child: Transform.scale(
+                        scale: scale,
+                        child: Icon(
+                          Icons.add_rounded,
+                          color: colorScheme.primary,
+                          size: 22,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  // Expanded content: arrow + Create Bill text — slides in from right.
+                  Opacity(
+                    opacity: contentOpacity,
+                    child: Transform.translate(
+                      offset: Offset(contentSlideX * 100, 0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            color: colorScheme.primary,
+                            size: 18,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                          Text(
+                            'Create Bill',
+                            style: AppTextStyles.labelLarge.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+          ),
+        );
+      },
     );
   }
 }
 
-class _MemberRow extends StatelessWidget {
-  const _MemberRow({
+// ═════════════════════════════════════════════════════════════════════════════
+// Top bar avatar stack — max 3 circular member photos + overflow
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _TopBarAvatarStack extends StatelessWidget {
+  const _TopBarAvatarStack({
     required this.members,
     required this.colorScheme,
     required this.isDark,
@@ -807,6 +476,10 @@ class _MemberRow extends StatelessWidget {
   final List<GroupMember> members;
   final ColorScheme colorScheme;
   final bool isDark;
+
+  static const _avatarSize = 30.0;
+  static const _overlap = 8.0;
+  static const _maxVisible = 3;
 
   static const _avatarColors = [
     AppColors.chartTeal,
@@ -817,93 +490,59 @@ class _MemberRow extends StatelessWidget {
     AppColors.chartCyan,
   ];
 
-  static const _avatarSize = 36.0;
-  static const _overlap = 10.0;
-
   @override
   Widget build(BuildContext context) {
-    if (members.isEmpty) return const SizedBox.shrink();
-
-    final visible = members.take(5).toList();
+    final visible = members.take(_maxVisible).toList();
     final overflow = members.length - visible.length;
-    final totalWidth = (visible.length * _avatarSize) -
-        ((visible.length - 1) * _overlap) +
-        (overflow > 0 ? _avatarSize + AppSpacing.sm : 0);
     final ringColor = isDark ? AppColors.darkBackground : AppColors.white;
+    final stackWidth = (visible.length * _avatarSize) -
+        ((visible.length - 1) * _overlap) +
+        (overflow > 0 ? _avatarSize - _overlap : 0);
 
     return SizedBox(
-      height: _avatarSize + 2,
-      width: math.max(totalWidth, _avatarSize),
-      child: Row(
+      height: _avatarSize,
+      width: stackWidth,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          SizedBox(
-            width: (visible.length * _avatarSize) -
-                ((visible.length - 1) * _overlap),
-            height: _avatarSize,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                for (var i = 0; i < visible.length; i++)
-                  Positioned(
-                    left: i * (_avatarSize - _overlap),
-                    child: _MemberAvatar(
-                      member: visible[i],
-                      color: _avatarColors[i % _avatarColors.length],
-                      ringColor: ringColor,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (overflow > 0) ...[
-            const SizedBox(width: AppSpacing.sm),
-            Container(
-              width: _avatarSize,
-              height: _avatarSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: colorScheme.primary,
-                border: Border.all(
-                  color: ringColor,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black
-                        .withValues(alpha: isDark ? 0.35 : 0.10),
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  '+$overflow',
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: colorScheme.onPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                ),
+          for (var i = 0; i < visible.length; i++)
+            Positioned(
+              left: i * (_avatarSize - _overlap),
+              child: _TopBarAvatar(
+                member: visible[i],
+                color: _avatarColors[i % _avatarColors.length],
+                ringColor: ringColor,
+                size: _avatarSize,
               ),
             ),
-          ],
+          if (overflow > 0)
+            Positioned(
+              left: visible.length * (_avatarSize - _overlap),
+              child: _TopBarOverflowChip(
+                count: overflow,
+                ringColor: ringColor,
+                colorScheme: colorScheme,
+                size: _avatarSize,
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _MemberAvatar extends StatelessWidget {
-  const _MemberAvatar({
+class _TopBarAvatar extends StatelessWidget {
+  const _TopBarAvatar({
     required this.member,
     required this.color,
     required this.ringColor,
+    required this.size,
   });
 
   final GroupMember member;
   final Color color;
   final Color ringColor;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -917,18 +556,15 @@ class _MemberAvatar extends StatelessWidget {
     return Tooltip(
       message: name,
       child: Container(
-        width: _MemberRow._avatarSize,
-        height: _MemberRow._avatarSize,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: color,
-          border: Border.all(
-            color: ringColor.withValues(alpha: 0.85),
-            width: 2.5,
-          ),
+          border: Border.all(color: ringColor, width: 2),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
+              color: Colors.black.withValues(alpha: 0.10),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -962,6 +598,54 @@ class _MemberAvatar extends StatelessWidget {
                   ),
                 ),
               ),
+      ),
+    );
+  }
+}
+
+class _TopBarOverflowChip extends StatelessWidget {
+  const _TopBarOverflowChip({
+    required this.count,
+    required this.ringColor,
+    required this.colorScheme,
+    required this.size,
+  });
+
+  final int count;
+  final Color ringColor;
+  final ColorScheme colorScheme;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '+$count more',
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: colorScheme.surfaceContainerHighest,
+          border: Border.all(color: ringColor, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            '+$count',
+            style: AppTextStyles.labelSmall.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w700,
+              height: 1.0,
+              fontSize: 10,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1498,15 +1182,6 @@ class _GroupDetailsSkeletonState extends State<_GroupDetailsSkeleton>
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  // Hero header skeleton.
-                  Container(
-                    height: 180,
-                    decoration: BoxDecoration(
-                      color: base,
-                      borderRadius: AppRadius.radiusXxl,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
                   // Stats row skeleton.
                   Row(
                     children: [
