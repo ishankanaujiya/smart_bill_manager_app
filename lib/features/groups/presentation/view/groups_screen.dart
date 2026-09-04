@@ -10,12 +10,30 @@ import '../state/group_providers.dart';
 import 'create_group_screen.dart';
 import 'group_details_screen.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Filter / sort enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _GroupFilter { all, owesYou, youOwe }
+
+enum _GroupSort { recent, name }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pattern types for decorative card backgrounds
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _CardPattern { dots, peaks, route, squareGrid, dotMatrix, circles }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Groups screen
+// ═════════════════════════════════════════════════════════════════════════════
+
 /// Groups tab for the app shell.
 ///
-/// Lists the groups the currently signed-in user belongs to (either as the
-/// creator or as a member) in real time. The screen features a gradient
-/// hero header with aggregate stats, rich group cards with member avatar
-/// stacks, shimmer loading skeletons, and animated empty / error states.
+/// Redesigned to match the "My Groups" reference design: flat app bar,
+/// 3-stat summary strip, filter chips + sort dropdown, 2-column group-card
+/// grid with animated decorative patterns, and a "Create a new group" promo
+/// card at the bottom.
 class GroupsScreen extends ConsumerStatefulWidget {
   const GroupsScreen({super.key});
 
@@ -27,23 +45,31 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     with TickerProviderStateMixin {
   late final AnimationController _entranceController;
   late final AnimationController _ambientController;
+  late final AnimationController _patternController;
+
+  _GroupFilter _activeFilter = _GroupFilter.all;
+  _GroupSort _activeSort = _GroupSort.recent;
 
   @override
   void initState() {
     super.initState();
     _entranceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1000),
     );
     _ambientController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 6000),
+      duration: const Duration(milliseconds: 7000),
+    )..repeat();
+    _patternController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
     )..repeat();
     _startEntrance();
   }
 
   Future<void> _startEntrance() async {
-    await Future.delayed(const Duration(milliseconds: 120));
+    await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
     _entranceController.forward();
   }
@@ -52,6 +78,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   void dispose() {
     _entranceController.dispose();
     _ambientController.dispose();
+    _patternController.dispose();
     super.dispose();
   }
 
@@ -59,6 +86,31 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const CreateGroupScreen()),
     );
+  }
+
+  List<Group> _applyFilterAndSort(List<Group> groups) {
+    // No financial data on the Group entity yet → filter on member count as
+    // a stand-in so the chips are functional (owes / owed shown via balance).
+    var filtered = groups;
+    switch (_activeFilter) {
+      case _GroupFilter.all:
+        filtered = groups;
+      case _GroupFilter.owesYou:
+        // Show groups with more than 1 member (placeholder logic)
+        filtered = groups.where((g) => g.memberCount > 1).toList();
+      case _GroupFilter.youOwe:
+        filtered = groups.where((g) => g.memberCount == 1).toList();
+    }
+
+    final sorted = [...filtered];
+    switch (_activeSort) {
+      case _GroupSort.recent:
+        sorted.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      case _GroupSort.name:
+        sorted.sort((a, b) =>
+            a.groupName.toLowerCase().compareTo(b.groupName.toLowerCase()));
+    }
+    return sorted;
   }
 
   @override
@@ -75,135 +127,195 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
-          // ── Hero header ─────────────────────────────────────────────────
+          // ── App bar ──────────────────────────────────────────────────────
           SliverToBoxAdapter(
-            child: _HeroHeader(
-              entranceController: _entranceController,
-              ambientController: _ambientController,
-              colorScheme: colorScheme,
-              isDark: isDark,
-              groupsAsync: groupsAsync,
-              onCreateGroup: _openCreateGroup,
+            child: StaggeredEntrance(
+              animation: _entranceController,
+              interval: const Interval(0.0, 0.35, curve: Curves.easeOutCubic),
+              slideOffset: 20,
+              child: _AppBar(
+                colorScheme: colorScheme,
+                isDark: isDark,
+              ),
             ),
           ),
-          // ── Body ────────────────────────────────────────────────────────
+
+          // ── Stats row ────────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: StaggeredEntrance(
+              animation: _entranceController,
+              interval: const Interval(0.1, 0.45, curve: Curves.easeOutCubic),
+              slideOffset: 24,
+              child: groupsAsync.when(
+                data: (groups) => _StatsRow(
+                  groups: groups,
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                ),
+                loading: () => _StatsRowSkeleton(
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                ),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+
+          // ── Filter chips ─────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: StaggeredEntrance(
+              animation: _entranceController,
+              interval: const Interval(0.2, 0.5, curve: Curves.easeOutCubic),
+              slideOffset: 20,
+              child: _FilterBar(
+                activeFilter: _activeFilter,
+                activeSort: _activeSort,
+                colorScheme: colorScheme,
+                onFilterChanged: (f) => setState(() => _activeFilter = f),
+                onSortChanged: (s) => setState(() => _activeSort = s),
+              ),
+            ),
+          ),
+
+          // ── Body ─────────────────────────────────────────────────────────
           groupsAsync.when(
-            data: (groups) => _buildBody(groups, colorScheme, isDark),
-            loading: () => _buildLoadingState(colorScheme, isDark),
-            error: (error, _) => _buildErrorState(colorScheme),
+            data: (groups) {
+              final filtered = _applyFilterAndSort(groups);
+              if (groups.isEmpty) {
+                return SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyState(
+                    entranceController: _entranceController,
+                    ambientController: _ambientController,
+                    colorScheme: colorScheme,
+                    onCreateGroup: _openCreateGroup,
+                  ),
+                );
+              }
+              if (filtered.isEmpty) {
+                return SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _NoResultsState(colorScheme: colorScheme),
+                );
+              }
+              return _buildGrid(filtered, colorScheme, isDark);
+            },
+            loading: () => _buildLoadingGrid(colorScheme),
+            error: (error, _) => SliverFillRemaining(
+              hasScrollBody: false,
+              child: _ErrorState(
+                entranceController: _entranceController,
+                colorScheme: colorScheme,
+                onRetry: () => ref.invalidate(groupsForCurrentUserProvider),
+              ),
+            ),
           ),
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 120),
+
+          // ── Create group promo card ───────────────────────────────────────
+          SliverToBoxAdapter(
+            child: groupsAsync.maybeWhen(
+              data: (_) => StaggeredEntrance(
+                animation: _entranceController,
+                interval:
+                    const Interval(0.55, 0.85, curve: Curves.easeOutCubic),
+                slideOffset: 20,
+                child: _PromoCard(
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                  onCreateGroup: _openCreateGroup,
+                ),
+              ),
+              orElse: () => const SizedBox.shrink(),
+            ),
           ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 110)),
         ],
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Body states
-  // ─────────────────────────────────────────────────────────────────────────
-
-  Widget _buildBody(
+  Widget _buildGrid(
     List<Group> groups,
     ColorScheme colorScheme,
     bool isDark,
   ) {
-    if (groups.isEmpty) {
-      return _buildEmptyState(colorScheme);
-    }
-
-    // Sort by most recently updated first so active groups surface to top.
-    final sorted = [...groups]
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.screenHorizontal,
-        vertical: AppSpacing.md,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        AppSpacing.sm,
+        AppSpacing.screenHorizontal,
+        AppSpacing.md,
       ),
-      sliver: SliverList(
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: AppSpacing.md,
+          crossAxisSpacing: AppSpacing.md,
+          childAspectRatio: 0.82,
+        ),
         delegate: SliverChildBuilderDelegate(
           (context, index) {
-            final group = sorted[index];
+            final group = groups[index];
+            final color = _groupColor(index);
+            final pattern = _CardPattern.values[index % _CardPattern.values.length];
             return StaggeredEntrance(
               animation: _entranceController,
               interval: Interval(
-                0.25 + (index * 0.06),
-                0.65 + (index * 0.06),
+                0.28 + (index * 0.04).clamp(0.0, 0.4),
+                0.60 + (index * 0.04).clamp(0.0, 0.4),
                 curve: Curves.easeOutCubic,
               ),
-              slideOffset: 32,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                child: _GroupCard(
-                  group: group,
-                  color: _groupColor(index),
-                  isDark: isDark,
-                  onTap: () {
-                    final uid = ref.read(currentUidProvider) ?? '';
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => GroupDetailsScreen(
-                          group: group,
-                          currentUserId: uid,
-                        ),
+              slideOffset: 28,
+              child: _GroupCard(
+                group: group,
+                color: color,
+                pattern: pattern,
+                isDark: isDark,
+                patternController: _patternController,
+                onTap: () {
+                  final uid = ref.read(currentUidProvider) ?? '';
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => GroupDetailsScreen(
+                        group: group,
+                        currentUserId: uid,
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
             );
           },
-          childCount: sorted.length,
+          childCount: groups.length,
         ),
       ),
     );
   }
 
-  Widget _buildLoadingState(ColorScheme colorScheme, bool isDark) {
+  Widget _buildLoadingGrid(ColorScheme colorScheme) {
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.screenHorizontal,
-        vertical: AppSpacing.md,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        AppSpacing.sm,
+        AppSpacing.screenHorizontal,
+        AppSpacing.md,
       ),
-      sliver: SliverList(
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: AppSpacing.md,
+          crossAxisSpacing: AppSpacing.md,
+          childAspectRatio: 0.82,
+        ),
         delegate: SliverChildBuilderDelegate(
-          (context, index) => Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _GroupCardSkeleton(colorScheme: colorScheme),
-          ),
-          childCount: 4,
+          (context, index) => _GroupCardSkeleton(colorScheme: colorScheme),
+          childCount: 6,
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState(ColorScheme colorScheme) {
-    return SliverFillRemaining(
-      hasScrollBody: false,
-      child: _EmptyState(
-        entranceController: _entranceController,
-        ambientController: _ambientController,
-        colorScheme: colorScheme,
-        onCreateGroup: _openCreateGroup,
-      ),
-    );
-  }
-
-  Widget _buildErrorState(ColorScheme colorScheme) {
-    return SliverFillRemaining(
-      hasScrollBody: false,
-      child: _ErrorState(
-        entranceController: _entranceController,
-        colorScheme: colorScheme,
-        onRetry: () => ref.invalidate(groupsForCurrentUserProvider),
-      ),
-    );
-  }
-
-  /// Picks a deterministic accent color per group so the list stays
-  /// visually varied but stable across rebuilds.
   Color _groupColor(int index) {
     final palette = Theme.of(context).brightness == Brightness.dark
         ? AppColors.chartColorsDark
@@ -213,293 +325,102 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Hero header — gradient banner with aggregate stats + create CTA
+// App bar — flat, white background with title + subtitle + icons
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _HeroHeader extends StatelessWidget {
-  const _HeroHeader({
-    required this.entranceController,
-    required this.ambientController,
-    required this.colorScheme,
-    required this.isDark,
-    required this.groupsAsync,
-    required this.onCreateGroup,
-  });
+class _AppBar extends StatelessWidget {
+  const _AppBar({required this.colorScheme, required this.isDark});
 
-  final AnimationController entranceController;
-  final AnimationController ambientController;
   final ColorScheme colorScheme;
   final bool isDark;
-  final AsyncValue<List<Group>> groupsAsync;
-  final VoidCallback onCreateGroup;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.screenHorizontal,
-        AppSpacing.pageTop,
+        AppSpacing.lg,
         AppSpacing.screenHorizontal,
         AppSpacing.sm,
       ),
-      child: StaggeredEntrance(
-        animation: entranceController,
-        interval: const Interval(0.0, 0.4, curve: Curves.easeOutCubic),
-        slideOffset: 28,
-        child: _GradientBanner(
-          ambientController: ambientController,
-          colorScheme: colorScheme,
-          isDark: isDark,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Title row ──────────────────────────────────────────────
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      decoration: BoxDecoration(
-                        color: colorScheme.onPrimary.withValues(alpha: 0.18),
-                        borderRadius: AppRadius.radiusMd,
-                      ),
-                      child: Icon(
-                        Icons.groups_2_rounded,
-                        color: colorScheme.onPrimary,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        'My Groups',
-                        style: AppTextStyles.headlineSmall.copyWith(
-                          color: colorScheme.onPrimary,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ),
-                    _CreateButton(
-                      entranceController: entranceController,
-                      colorScheme: colorScheme,
-                      onPressed: onCreateGroup,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                // ── Stats row ──────────────────────────────────────────────
-                groupsAsync.when(
-                  data: (groups) => _StatsRow(
-                    entranceController: entranceController,
-                    colorScheme: colorScheme,
-                    totalGroups: groups.length,
-                    totalMembers: _uniqueMemberCount(groups),
-                  ),
-                  loading: () => _StatsRow(
-                    entranceController: entranceController,
-                    colorScheme: colorScheme,
-                    totalGroups: null,
-                    totalMembers: null,
-                  ),
-                  error: (_, __) => _StatsRow(
-                    entranceController: entranceController,
-                    colorScheme: colorScheme,
-                    totalGroups: 0,
-                    totalMembers: 0,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Counts unique members across all groups (a user in 3 groups counts once).
-  int _uniqueMemberCount(List<Group> groups) {
-    final ids = <String>{};
-    for (final g in groups) {
-      ids.addAll(g.memberIds);
-    }
-    return ids.length;
-  }
-}
-
-/// Animated gradient banner with a slow-moving ambient sheen.
-class _GradientBanner extends StatelessWidget {
-  const _GradientBanner({
-    required this.ambientController,
-    required this.colorScheme,
-    required this.isDark,
-    required this.child,
-  });
-
-  final AnimationController ambientController;
-  final ColorScheme colorScheme;
-  final bool isDark;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final gradient = isDark
-        ? AppColors.darkPrimaryGradient
-        : AppColors.lightPrimaryGradient;
-
-    return AnimatedBuilder(
-      animation: ambientController,
-      builder: (context, _) {
-        // Slow horizontal sweep of a soft light band across the gradient.
-        final t = ambientController.value;
-        final sweepX = -0.3 + 1.6 * t;
-
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: AppRadius.radiusXxl,
-            gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: gradient.colors,
-            ),
-            boxShadow: isDark
-                ? AppShadows.primaryGlowDark
-                : AppShadows.primaryGlowLight,
-          ),
-          child: Stack(
-            children: [
-              // Ambient sheen overlay.
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: AppRadius.radiusXxl,
-                    gradient: LinearGradient(
-                      begin: Alignment(sweepX, -0.8),
-                      end: Alignment(sweepX + 0.4, 0.8),
-                      colors: [
-                        Colors.white.withValues(alpha: 0.0),
-                        Colors.white
-                            .withValues(alpha: isDark ? 0.06 : 0.10),
-                        Colors.white.withValues(alpha: 0.0),
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-              // Subtle dotted texture in the corner.
-              Positioned(
-                right: -20,
-                top: -20,
-                child: Opacity(
-                  opacity: 0.12,
-                  child: CustomPaint(
-                    size: const Size(140, 140),
-                    painter: _DotPatternPainter(
-                      color: colorScheme.onPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              child,
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CreateButton extends StatelessWidget {
-  const _CreateButton({
-    required this.entranceController,
-    required this.colorScheme,
-    required this.onPressed,
-  });
-
-  final AnimationController entranceController;
-  final ColorScheme colorScheme;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return StaggeredEntrance(
-      animation: entranceController,
-      interval: const Interval(0.15, 0.5, curve: Curves.easeOutBack),
-      slideOffset: 16,
-      child: Material(
-        color: colorScheme.onPrimary.withValues(alpha: 0.22),
-        borderRadius: AppRadius.radiusFull,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: AppRadius.radiusFull,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.add_rounded,
-                  size: 18,
-                  color: colorScheme.onPrimary,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Text(
-                  'New',
-                  style: AppTextStyles.labelLarge.copyWith(
-                    color: colorScheme.onPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsRow extends StatelessWidget {
-  const _StatsRow({
-    required this.entranceController,
-    required this.colorScheme,
-    required this.totalGroups,
-    required this.totalMembers,
-  });
-
-  final AnimationController entranceController;
-  final ColorScheme colorScheme;
-  final int? totalGroups;
-  final int? totalMembers;
-
-  @override
-  Widget build(BuildContext context) {
-    return StaggeredEntrance(
-      animation: entranceController,
-      interval: const Interval(0.2, 0.55, curve: Curves.easeOutCubic),
-      slideOffset: 18,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Expanded(
-            child: _StatPill(
-              icon: Icons.group_work_rounded,
-              label: 'Groups',
-              value: totalGroups,
-              colorScheme: colorScheme,
+          // Icon badge
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: colorScheme.primary,
+              borderRadius: AppRadius.radiusMd,
+              boxShadow: isDark
+                  ? AppShadows.primaryGlowDark
+                  : AppShadows.primaryGlowLight,
+            ),
+            child: Icon(
+              Icons.groups_2_rounded,
+              color: colorScheme.onPrimary,
+              size: 26,
             ),
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: _StatPill(
-              icon: Icons.people_alt_rounded,
-              label: 'People',
-              value: totalMembers,
-              colorScheme: colorScheme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'My Groups',
+                  style: AppTextStyles.titleLarge.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                Text(
+                  'Manage, track & settle group expenses',
+                  style: AppTextStyles.caption.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
+          ),
+          // Search icon
+          _IconButton(
+            icon: Icons.search_rounded,
+            colorScheme: colorScheme,
+            isDark: isDark,
+            onTap: () {},
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // Bell icon with badge
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _IconButton(
+                icon: Icons.notifications_outlined,
+                colorScheme: colorScheme,
+                isDark: isDark,
+                onTap: () {},
+              ),
+              Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: colorScheme.error,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: colorScheme.surface,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -507,80 +428,494 @@ class _StatsRow extends StatelessWidget {
   }
 }
 
-class _StatPill extends StatelessWidget {
-  const _StatPill({
+class _IconButton extends StatelessWidget {
+  const _IconButton({
     required this.icon,
-    required this.label,
-    required this.value,
     required this.colorScheme,
+    required this.isDark,
+    required this.onTap,
   });
 
   final IconData icon;
-  final String label;
-  final int? value;
   final ColorScheme colorScheme;
+  final bool isDark;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        color: colorScheme.onPrimary.withValues(alpha: 0.14),
-        borderRadius: AppRadius.radiusLg,
-        border: Border.all(
-          color: colorScheme.onPrimary.withValues(alpha: 0.12),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: colorScheme.onPrimary, size: 20),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value == null ? '—' : value.toString(),
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: colorScheme.onPrimary,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                  ),
-                ),
-                Text(
-                  label,
-                  style: AppTextStyles.caption.copyWith(
-                    color: colorScheme.onPrimary.withValues(alpha: 0.85),
-                  ),
-                ),
-              ],
-            ),
+    return Material(
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+      borderRadius: AppRadius.radiusMd,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppRadius.radiusMd,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Icon(
+            icon,
+            color: colorScheme.onSurface,
+            size: 22,
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Group card — rich card with avatar, member stack, admin badge
+// Stats row — Total Groups | You Owe | You're Owed
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _StatsRow extends StatelessWidget {
+  const _StatsRow({
+    required this.groups,
+    required this.colorScheme,
+    required this.isDark,
+  });
+
+  final List<Group> groups;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        AppSpacing.sm,
+        AppSpacing.screenHorizontal,
+        AppSpacing.md,
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
+        ),
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: AppRadius.radiusXl,
+          boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _StatCell(
+                icon: Icons.groups_2_rounded,
+                iconBg: colorScheme.primaryContainer,
+                iconColor: colorScheme.primary,
+                label: 'Total Groups',
+                value: groups.length.toString(),
+                subLabel: 'Groups',
+                valueColor: colorScheme.onSurface,
+                colorScheme: colorScheme,
+              ),
+            ),
+            _VertDivider(colorScheme: colorScheme),
+            Expanded(
+              child: _StatCell(
+                icon: Icons.account_balance_wallet_rounded,
+                iconBg: AppColors.chartOrange.withValues(alpha: 0.12),
+                iconColor: AppColors.chartOrange,
+                label: 'You Owe',
+                value: 'Rs. 0',
+                subLabel: 'Across 0 groups',
+                valueColor: AppColors.chartOrange,
+                colorScheme: colorScheme,
+              ),
+            ),
+            _VertDivider(colorScheme: colorScheme),
+            Expanded(
+              child: _StatCell(
+                icon: Icons.trending_up_rounded,
+                iconBg: colorScheme.primaryContainer,
+                iconColor: colorScheme.primary,
+                label: "You're Owed",
+                value: 'Rs. 0',
+                subLabel: 'Across 0 groups',
+                valueColor: colorScheme.primary,
+                colorScheme: colorScheme,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VertDivider extends StatelessWidget {
+  const _VertDivider({required this.colorScheme});
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 48,
+      color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+    );
+  }
+}
+
+class _StatCell extends StatelessWidget {
+  const _StatCell({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.label,
+    required this.value,
+    required this.subLabel,
+    required this.valueColor,
+    required this.colorScheme,
+  });
+
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String label;
+  final String value;
+  final String subLabel;
+  final Color valueColor;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: iconBg,
+            borderRadius: AppRadius.radiusSm,
+          ),
+          child: Icon(icon, color: iconColor, size: 18),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: AppTextStyles.labelLarge.copyWith(
+            color: valueColor,
+            fontWeight: FontWeight.w800,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        Text(
+          subLabel,
+          style: AppTextStyles.caption.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontSize: 9,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
+
+class _StatsRowSkeleton extends StatefulWidget {
+  const _StatsRowSkeleton({required this.colorScheme, required this.isDark});
+
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  State<_StatsRowSkeleton> createState() => _StatsRowSkeletonState();
+}
+
+class _StatsRowSkeletonState extends State<_StatsRowSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base =
+        widget.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        AppSpacing.sm,
+        AppSpacing.screenHorizontal,
+        AppSpacing.md,
+      ),
+      child: AnimatedBuilder(
+        animation: _shimmer,
+        builder: (_, __) => Container(
+          height: 90,
+          decoration: BoxDecoration(
+            color: base,
+            borderRadius: AppRadius.radiusXl,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Filter bar — chips + sort dropdown
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.activeFilter,
+    required this.activeSort,
+    required this.colorScheme,
+    required this.onFilterChanged,
+    required this.onSortChanged,
+  });
+
+  final _GroupFilter activeFilter;
+  final _GroupSort activeSort;
+  final ColorScheme colorScheme;
+  final ValueChanged<_GroupFilter> onFilterChanged;
+  final ValueChanged<_GroupSort> onSortChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        0,
+        AppSpacing.screenHorizontal,
+        AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          // Scrollable filter chips
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _FilterChip(
+                    label: 'All Groups',
+                    icon: Icons.grid_view_rounded,
+                    isActive: activeFilter == _GroupFilter.all,
+                    colorScheme: colorScheme,
+                    onTap: () => onFilterChanged(_GroupFilter.all),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _FilterChip(
+                    label: 'Owes You',
+                    icon: Icons.arrow_downward_rounded,
+                    isActive: activeFilter == _GroupFilter.owesYou,
+                    colorScheme: colorScheme,
+                    onTap: () => onFilterChanged(_GroupFilter.owesYou),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _FilterChip(
+                    label: 'You Owe',
+                    icon: Icons.arrow_upward_rounded,
+                    isActive: activeFilter == _GroupFilter.youOwe,
+                    colorScheme: colorScheme,
+                    onTap: () => onFilterChanged(_GroupFilter.youOwe),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // Sort dropdown (fixed on right)
+          _SortDropdown(
+            activeSort: activeSort,
+            colorScheme: colorScheme,
+            onChanged: onSortChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.icon,
+    required this.isActive,
+    required this.colorScheme,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool isActive;
+  final ColorScheme colorScheme;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: isActive
+            ? colorScheme.primary
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        borderRadius: AppRadius.radiusFull,
+        border: isActive
+            ? null
+            : Border.all(
+                color: colorScheme.outlineVariant,
+              ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppRadius.radiusFull,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm - 2,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 13,
+                color: isActive
+                    ? colorScheme.onPrimary
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: isActive
+                      ? colorScheme.onPrimary
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight:
+                      isActive ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SortDropdown extends StatelessWidget {
+  const _SortDropdown({
+    required this.activeSort,
+    required this.colorScheme,
+    required this.onChanged,
+  });
+
+  final _GroupSort activeSort;
+  final ColorScheme colorScheme;
+  final ValueChanged<_GroupSort> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        final result = await showMenu<_GroupSort>(
+          context: context,
+          position: RelativeRect.fromLTRB(
+            MediaQuery.sizeOf(context).width,
+            80,
+            AppSpacing.screenHorizontal,
+            0,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: AppRadius.radiusMd,
+          ),
+          items: const [
+            PopupMenuItem(value: _GroupSort.recent, child: Text('Recent')),
+            PopupMenuItem(value: _GroupSort.name, child: Text('Name')),
+          ],
+        );
+        if (result != null) onChanged(result);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm - 2,
+        ),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: AppRadius.radiusFull,
+          border: Border.all(color: colorScheme.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              activeSort == _GroupSort.recent ? 'Recent' : 'Name',
+              style: AppTextStyles.labelSmall.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Group card — 2-column grid card with animated decorative pattern
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _GroupCard extends StatefulWidget {
   const _GroupCard({
     required this.group,
     required this.color,
+    required this.pattern,
     required this.isDark,
+    required this.patternController,
     required this.onTap,
   });
 
   final Group group;
   final Color color;
+  final _CardPattern pattern;
   final bool isDark;
+  final AnimationController patternController;
   final VoidCallback onTap;
 
   @override
@@ -596,7 +931,7 @@ class _GroupCardState extends State<_GroupCard>
     super.initState();
     _pressController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 120),
+      duration: const Duration(milliseconds: 100),
     );
   }
 
@@ -610,8 +945,14 @@ class _GroupCardState extends State<_GroupCard>
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final group = widget.group;
-    final isAdmin = group.createdBy.isNotEmpty &&
-        group.groupAdmin.id == group.createdBy;
+
+    // Dummy balance data until financial layer is wired.
+    // Odd-indexed groups show "You owe", even show "You're owed".
+    final dummyIndex = group.groupName.codeUnits.fold(0, (a, b) => a + b);
+    final isOwed = dummyIndex % 2 == 0;
+    final balanceColor =
+        isOwed ? colorScheme.primary : AppColors.chartOrange;
+    final balanceLabel = isOwed ? "You're owed" : 'You owe';
 
     return GestureDetector(
       onTapDown: (_) => _pressController.forward(),
@@ -622,132 +963,135 @@ class _GroupCardState extends State<_GroupCard>
       onTapCancel: () => _pressController.reverse(),
       child: AnimatedBuilder(
         animation: _pressController,
-        builder: (context, child) {
-          final scale = 1.0 - 0.02 * _pressController.value;
-          return Transform.scale(
-            scale: scale,
-            child: child,
-          );
-        },
+        builder: (context, child) => Transform.scale(
+          scale: 1.0 - 0.025 * _pressController.value,
+          child: child,
+        ),
         child: Container(
           decoration: BoxDecoration(
             color: colorScheme.surface,
-            borderRadius: AppRadius.radiusXxl,
-            boxShadow:
-                widget.isDark ? AppShadows.smDark : AppShadows.smLight,
+            borderRadius: AppRadius.radiusXl,
+            boxShadow: widget.isDark ? AppShadows.smDark : AppShadows.smLight,
             border: Border.all(
               color: colorScheme.outlineVariant.withValues(alpha: 0.4),
             ),
           ),
           child: ClipRRect(
-            borderRadius: AppRadius.radiusXxl,
-            child: Column(
+            borderRadius: AppRadius.radiusXl,
+            child: Stack(
               children: [
-                // ── Top accent strip ───────────────────────────────────────
-                Container(
-                  height: 4,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        widget.color,
-                        widget.color.withValues(alpha: 0.5),
-                      ],
+                // ── Tinted background wash on right side ────────────────────
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 72,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          widget.color.withValues(alpha: 0.0),
+                          widget.color.withValues(alpha: 0.06),
+                          widget.color.withValues(alpha: 0.10),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
                     ),
                   ),
                 ),
-                // ── Body ───────────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: Row(
-                    children: [
-                      _GroupAvatar(
-                        group: group,
+                // ── Animated decorative pattern (right side) ───────────────
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 72,
+                  child: AnimatedBuilder(
+                    animation: widget.patternController,
+                    builder: (context, _) => CustomPaint(
+                      painter: _CardPatternPainter(
+                        pattern: widget.pattern,
                         color: widget.color,
+                        progress: widget.patternController.value,
                       ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    group.groupName,
-                                    style: AppTextStyles.titleMedium.copyWith(
-                                      color: colorScheme.onSurface,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: -0.1,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (isAdmin) ...[
-                                  const SizedBox(width: AppSpacing.xs),
-                                  _AdminBadge(color: widget.color),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.event_rounded,
-                                  size: 13,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _formatDate(group.createdAt),
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: colorScheme.onSurfaceVariant,
-                        size: 24,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                // ── Footer: member stack + count ───────────────────────────
+                // ── Card content ───────────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    0,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                  ),
-                  child: Row(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _MemberAvatarStack(
-                        members: group.members,
-                        fallbackColor: widget.color,
-                        surfaceColor: colorScheme.surface,
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
+                      // Group name
+                      Text(
+                        group.groupName,
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.2,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      if (group.groupPicture != null)
-                        Icon(
-                          Icons.photo_camera_rounded,
-                          size: 14,
+                      const SizedBox(height: 2),
+                      // Description placeholder
+                      Text(
+                        _groupSubtitle(group),
+                        style: AppTextStyles.caption.copyWith(
                           color: colorScheme.onSurfaceVariant,
+                          fontSize: 10,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      // Member count badge
+                      _MemberBadge(
+                        count: group.memberCount,
+                        color: colorScheme.primary,
+                        onPrimary: colorScheme.onPrimary,
+                      ),
+                      const Spacer(),
+                      // Balance label
+                      Text(
+                        balanceLabel,
+                        style: AppTextStyles.caption.copyWith(
+                          color: balanceColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      // Balance value + arrow
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Rs. 0.00',
+                              style: AppTextStyles.titleSmall.copyWith(
+                                color: balanceColor,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.7),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 14,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -759,272 +1103,426 @@ class _GroupCardState extends State<_GroupCard>
     );
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  String _groupSubtitle(Group group) {
+    // Generate a friendly tagline from group name.
+    final name = group.groupName.toLowerCase();
+    if (name.contains('room') || name.contains('home') || name.contains('flat')) {
+      return 'Home sweet home 🏠';
+    } else if (name.contains('office') || name.contains('work') || name.contains('lunch')) {
+      return 'Eat together, stay together 🍽';
+    } else if (name.contains('trip') || name.contains('travel') || name.contains('vacation')) {
+      return 'Memories & adventures 🏕';
+    } else if (name.contains('family')) {
+      return 'Making memories together ✈';
+    } else if (name.contains('friend') || name.contains('college') || name.contains('school')) {
+      return 'Good times & great people 🎉';
+    } else if (name.contains('sport') || name.contains('team') || name.contains('football')) {
+      return 'Play hard, win together ⚽';
+    }
+    return 'Split bills effortlessly 💸';
   }
 }
 
-/// Leading avatar for a group card. Shows the group photo when available,
-/// otherwise a gradient circle with the group's initial.
-class _GroupAvatar extends StatelessWidget {
-  const _GroupAvatar({required this.group, required this.color});
+// ─────────────────────────────────────────────────────────────────────────────
+// Member count badge
+// ─────────────────────────────────────────────────────────────────────────────
 
-  final Group group;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final picture = group.groupPicture;
-    final initial = group.groupName.isNotEmpty
-        ? group.groupName.characters.first.toUpperCase()
-        : '';
-
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        borderRadius: AppRadius.radiusLg,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            color.withValues(alpha: 0.85),
-            color.withValues(alpha: 0.55),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: picture != null && picture.isNotEmpty
-          ? Image.network(
-              picture,
-              fit: BoxFit.cover,
-              errorBuilder: (context, _, __) => _initialAvatar(initial),
-            )
-          : _initialAvatar(initial),
-    );
-  }
-
-  Widget _initialAvatar(String initial) {
-    return Center(
-      child: initial.isEmpty
-          ? const Icon(Icons.group_rounded, color: Colors.white, size: 26)
-          : Text(
-              initial,
-              style: AppTextStyles.headlineSmall.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                height: 1.0,
-              ),
-            ),
-    );
-  }
-}
-
-/// Overlapping avatar stack showing up to 4 member profile pictures or
-/// initials, with a "+N" overflow indicator.
-class _MemberAvatarStack extends StatelessWidget {
-  const _MemberAvatarStack({
-    required this.members,
-    required this.fallbackColor,
-    required this.surfaceColor,
-  });
-
-  final List<GroupMember> members;
-  final Color fallbackColor;
-  final Color surfaceColor;
-
-  static const double _avatarSize = 28.0;
-  static const double _overlap = 18.0;
-
-  @override
-  Widget build(BuildContext context) {
-    if (members.isEmpty) return const SizedBox.shrink();
-
-    final visible = members.take(4).toList();
-    final overflow = members.length - visible.length;
-    final stackWidth =
-        (visible.length - 1) * _overlap + _avatarSize + (overflow > 0 ? _overlap : 0);
-
-    return SizedBox(
-      width: stackWidth,
-      height: _avatarSize,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (var i = 0; i < visible.length; i++)
-            Positioned(
-              left: i * _overlap,
-              child: _MemberAvatar(
-                member: visible[i],
-                index: i,
-                surfaceColor: surfaceColor,
-              ),
-            ),
-          if (overflow > 0)
-            Positioned(
-              left: visible.length * _overlap,
-              child: _OverflowAvatar(
-                count: overflow,
-                surfaceColor: surfaceColor,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MemberAvatar extends StatelessWidget {
-  const _MemberAvatar({
-    required this.member,
-    required this.index,
-    required this.surfaceColor,
-  });
-
-  final GroupMember member;
-  final int index;
-  final Color surfaceColor;
-
-  static const _avatarColors = [
-    AppColors.chartTeal,
-    AppColors.chartBlue,
-    AppColors.chartPurple,
-    AppColors.chartOrange,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final picture = member.profilePicture;
-    final initial = _memberInitial(member);
-
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _avatarColors[index % _avatarColors.length],
-        border: Border.all(color: surfaceColor, width: 2),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: picture != null && picture.isNotEmpty
-          ? Image.network(
-              picture,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _initial(initial),
-            )
-          : _initial(initial),
-    );
-  }
-
-  Widget _initial(String initial) {
-    return Center(
-      child: Text(
-        initial,
-        style: AppTextStyles.labelSmall.copyWith(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
-          height: 1.0,
-        ),
-      ),
-    );
-  }
-
-  String _memberInitial(GroupMember m) {
-    final source = (m.displayName?.isNotEmpty ?? false)
-        ? m.displayName!
-        : (m.fullName.isNotEmpty ? m.fullName : m.email);
-    return source.isNotEmpty ? source.characters.first.toUpperCase() : '?';
-  }
-}
-
-class _OverflowAvatar extends StatelessWidget {
-  const _OverflowAvatar({
+class _MemberBadge extends StatelessWidget {
+  const _MemberBadge({
     required this.count,
-    required this.surfaceColor,
+    required this.color,
+    required this.onPrimary,
   });
 
   final int count;
-  final Color surfaceColor;
+  final Color color;
+  final Color onPrimary;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: colorScheme.surfaceContainerHighest,
-        border: Border.all(color: surfaceColor, width: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xxs,
       ),
-      child: Center(
-        child: Text(
-          '+$count',
-          style: AppTextStyles.labelSmall.copyWith(
-            color: colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
-            height: 1.0,
-          ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: AppRadius.radiusFull,
+      ),
+      child: Text(
+        '$count member${count == 1 ? '' : 's'}',
+        style: AppTextStyles.labelSmall.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 10,
         ),
       ),
     );
   }
 }
 
-class _AdminBadge extends StatelessWidget {
-  const _AdminBadge({required this.color});
+// ─────────────────────────────────────────────────────────────────────────────
+// Decorative pattern painter for group cards
+// ─────────────────────────────────────────────────────────────────────────────
 
+class _CardPatternPainter extends CustomPainter {
+  const _CardPatternPainter({
+    required this.pattern,
+    required this.color,
+    required this.progress,
+  });
+
+  final _CardPattern pattern;
   final Color color;
+  final double progress;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.16),
-        borderRadius: AppRadius.radiusFull,
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.shield_rounded,
-            size: 10,
-            color: color,
-          ),
-          const SizedBox(width: 3),
-          Text(
-            'Admin',
-            style: AppTextStyles.labelSmall.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
-              height: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+
+    switch (pattern) {
+      case _CardPattern.dots:
+        _paintDots(canvas, size, paint);
+      case _CardPattern.peaks:
+        _paintPeaks(canvas, size, paint);
+      case _CardPattern.route:
+        _paintRoute(canvas, size, paint);
+      case _CardPattern.squareGrid:
+        _paintSquareGrid(canvas, size, paint);
+      case _CardPattern.dotMatrix:
+        _paintDotMatrix(canvas, size, paint);
+      case _CardPattern.circles:
+        _paintCircles(canvas, size, paint);
+    }
   }
+
+  void _paintDots(Canvas canvas, Size size, Paint paint) {
+    // Animated floating bubbles — continuous upward drift, invisible on wrap
+    final bubblePaint = Paint()
+      ..style = PaintingStyle.fill;
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    // (x%, radius, speed, startOffset, swayPhase)
+    // startOffset spreads bubbles across the cycle so they don't wrap together
+    final bubbles = [
+      (0.15, 7.0, 0.18, 0.00, 0.0),
+      (0.45, 5.0, 0.22, 0.30, 1.2),
+      (0.75, 8.0, 0.15, 0.55, 2.4),
+      (0.30, 4.0, 0.25, 0.15, 0.8),
+      (0.60, 6.0, 0.20, 0.70, 1.8),
+      (0.85, 3.5, 0.24, 0.45, 3.0),
+      (0.20, 5.5, 0.17, 0.85, 2.0),
+      (0.50, 4.5, 0.26, 0.60, 0.5),
+      (0.80, 6.5, 0.19, 0.10, 1.5),
+    ];
+
+    final t = progress * 2 * math.pi;
+
+    for (final b in bubbles) {
+      final bx = b.$1;
+      final br = b.$2;
+      final speed = b.$3;
+      final startOffset = b.$4;
+      final swayPhase = b.$5;
+
+      // Continuous upward drift: y goes from 1.2 (below visible area)
+      // to -0.2 (above visible area), then wraps. Total range = 1.4.
+      final cycle = (progress * speed + startOffset) % 1.4;
+      final yNorm = 1.2 - cycle; // starts at 1.2, moves up to -0.2
+
+      // Gentle horizontal sway
+      final xNorm = bx + 0.06 * math.sin(t * 0.4 + swayPhase);
+
+      // Eased breathing scale
+      final breathe = 0.88 + 0.12 * (0.5 + 0.5 * math.sin(t * 0.6 + swayPhase * 1.5));
+      final r = br * breathe;
+
+      final px = xNorm * size.width;
+      final py = yNorm * size.height;
+
+      // Smoothstep fade: fully invisible below y=0.0 and above y=1.0,
+      // fades in over 0.0→0.12, fades out over 0.88→1.0.
+      // This guarantees the wrap from -0.2→1.2 happens while invisible.
+      final edgeFade = _bubbleFade(yNorm);
+
+      // Soft fill
+      final fillAlpha = 0.12 * edgeFade;
+      bubblePaint.color = color.withValues(alpha: fillAlpha.clamp(0.0, 1.0));
+      canvas.drawCircle(Offset(px, py), r, bubblePaint);
+
+      // Crisp ring
+      final ringAlpha = 0.30 * edgeFade;
+      ringPaint.color = color.withValues(alpha: ringAlpha.clamp(0.0, 1.0));
+      canvas.drawCircle(Offset(px, py), r, ringPaint);
+
+      // Glossy highlight dot
+      final highlightAlpha = 0.40 * edgeFade;
+      canvas.drawCircle(
+        Offset(px - r * 0.3, py - r * 0.3),
+        r * 0.25,
+        Paint()
+          ..color = color.withValues(alpha: highlightAlpha.clamp(0.0, 1.0))
+          ..style = PaintingStyle.fill,
+      );
+    }
+  }
+
+  /// Smoothstep: 0 for y ≤ 0 or y ≥ 1, fades in over [0, 0.12],
+  /// full opacity over [0.12, 0.88], fades out over [0.88, 1.0].
+  double _bubbleFade(double y) {
+    if (y <= 0.0 || y >= 1.0) return 0.0;
+    if (y >= 0.12 && y <= 0.88) return 1.0;
+    double t;
+    if (y < 0.12) {
+      t = y / 0.12;
+    } else {
+      t = (1.0 - y) / 0.12;
+    }
+    return t * t * (3 - 2 * t);
+  }
+
+  void _paintPeaks(Canvas canvas, Size size, Paint paint) {
+    // Animated layered mountain peaks silhouette
+    final peakPaint = Paint()
+      ..style = PaintingStyle.fill;
+
+    // Back layer — lighter, wider peaks
+    final backPath = Path();
+    backPath.moveTo(0, size.height);
+    const backPeaks = 3;
+    final backW = size.width / backPeaks;
+    for (var i = 0; i < backPeaks; i++) {
+      final xStart = i * backW;
+      final xMid = xStart + backW / 2;
+      final xEnd = xStart + backW;
+      // Animated peak height with gentle breathing
+      final baseH = size.height * 0.55;
+      final animH = baseH +
+          (size.height * 0.08) *
+              math.sin(progress * 2 * math.pi + i * 0.7);
+      backPath.lineTo(xStart, size.height * 0.7);
+      backPath.lineTo(xMid, size.height - animH);
+      backPath.lineTo(xEnd, size.height * 0.7);
+    }
+    backPath.lineTo(size.width, size.height);
+    backPath.close();
+    peakPaint.color = color.withValues(alpha: 0.12);
+    canvas.drawPath(backPath, peakPaint);
+
+    // Front layer — darker, sharper peaks
+    final frontPath = Path();
+    frontPath.moveTo(0, size.height);
+    const frontPeaks = 4;
+    final frontW = size.width / frontPeaks;
+    for (var i = 0; i < frontPeaks; i++) {
+      final xStart = i * frontW;
+      final xMid = xStart + frontW / 2;
+      final xEnd = xStart + frontW;
+      final baseH = size.height * 0.38;
+      final animH = baseH +
+          (size.height * 0.06) *
+              math.sin(progress * 2 * math.pi + i * 1.1 + 1.0);
+      frontPath.lineTo(xStart, size.height * 0.5);
+      frontPath.lineTo(xMid, size.height - animH);
+      frontPath.lineTo(xEnd, size.height * 0.5);
+    }
+    frontPath.lineTo(size.width, size.height);
+    frontPath.close();
+    peakPaint.color = color.withValues(alpha: 0.22);
+    canvas.drawPath(frontPath, peakPaint);
+
+    // Snow cap dots on the front peaks
+    final dotPaint = Paint()..style = PaintingStyle.fill;
+    for (var i = 0; i < frontPeaks; i++) {
+      final xMid = i * frontW + frontW / 2;
+      final baseH = size.height * 0.38;
+      final animH = baseH +
+          (size.height * 0.06) *
+              math.sin(progress * 2 * math.pi + i * 1.1 + 1.0);
+      final peakY = size.height - animH;
+      final dotAlpha = 0.35 + 0.20 * math.sin(progress * 2 * math.pi + i).abs();
+      dotPaint.color = color.withValues(alpha: dotAlpha);
+      canvas.drawCircle(Offset(xMid, peakY + 3), 2.0, dotPaint);
+    }
+  }
+
+  void _paintRoute(Canvas canvas, Size size, Paint paint) {
+    // Animated winding travel route with waypoint dots
+    final routePaint = Paint()
+      ..color = color.withValues(alpha: 0.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final dotPaint = Paint()
+      ..style = PaintingStyle.fill;
+
+    // Define a winding path that curves through the pattern area.
+    final path = Path();
+    const segments = 4;
+    final segW = size.width / segments;
+
+    // Animated dash offset for a "drawing" effect.
+    final dashShift = progress * size.width;
+
+    for (var s = 0; s <= segments; s++) {
+      final x = s * segW;
+      final yBase = size.height * 0.5;
+      final y = yBase +
+          (size.height * 0.28) *
+              math.sin((s / segments) * 2 * math.pi +
+                  progress * 2 * math.pi);
+
+      if (s == 0) {
+        path.moveTo(x, y);
+      } else {
+        // Use cubic curves for smooth winding.
+        final prevX = (s - 1) * segW;
+        final prevY = yBase +
+            (size.height * 0.28) *
+                math.sin(((s - 1) / segments) * 2 * math.pi +
+                    progress * 2 * math.pi);
+        final midX = (prevX + x) / 2;
+        final cp1y = prevY + (y - prevY) * 0.5 + size.height * 0.12;
+        final cp2y = prevY + (y - prevY) * 0.5 - size.height * 0.12;
+        path.cubicTo(midX, cp1y, midX, cp2y, x, y);
+      }
+
+      // Draw waypoint dots at each segment point.
+      final pulseAlpha = 0.30 + 0.25 * math.sin(progress * 2 * math.pi + s * 0.8).abs();
+      dotPaint.color = color.withValues(alpha: pulseAlpha);
+      canvas.drawCircle(Offset(x, y), 3.5, dotPaint);
+
+      // Outer ring on alternating waypoints for a "location pin" feel.
+      if (s % 2 == 0) {
+        final ringAlpha = 0.15 + 0.15 * math.sin(progress * 2 * math.pi + s).abs();
+        canvas.drawCircle(
+          Offset(x, y),
+          7.0,
+          Paint()
+            ..color = color.withValues(alpha: ringAlpha)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
+      }
+    }
+
+    // Draw the path with a dashed effect for a "travel trail" look.
+    _drawDashedPath(canvas, path, routePaint, dashWidth: 6, gapWidth: 4, offset: dashShift);
+  }
+
+  /// Draws a [path] on [canvas] with a dashed stroke pattern.
+  void _drawDashedPath(
+    Canvas canvas,
+    Path path,
+    Paint paint, {
+    required double dashWidth,
+    required double gapWidth,
+    required double offset,
+  }) {
+    final dashLen = dashWidth + gapWidth;
+    final metrics = path.computeMetrics().toList();
+    for (final metric in metrics) {
+      final totalLen = metric.length;
+      var start = offset % dashLen - dashLen;
+      while (start < totalLen) {
+        final end = (start + dashWidth).clamp(0.0, totalLen);
+        if (start < totalLen && end > 0) {
+          final extracted = metric.extractPath(start.clamp(0.0, totalLen), end);
+          canvas.drawPath(extracted, paint);
+        }
+        start += dashLen;
+      }
+    }
+  }
+
+  void _paintSquareGrid(Canvas canvas, Size size, Paint paint) {
+    // Animated pulsing square grid
+    const cols = 3;
+    const rows = 4;
+    final cellW = size.width / cols;
+    final cellH = size.height / rows;
+    final squarePaint = Paint()
+      ..style = PaintingStyle.fill;
+
+    for (var c = 0; c < cols; c++) {
+      for (var r = 0; r < rows; r++) {
+        final phase = (progress * 2 * math.pi) + (c + r) * 0.5;
+        final alpha = 0.20 + 0.25 * math.sin(phase).abs();
+        squarePaint.color = color.withValues(alpha: alpha);
+        final cx = c * cellW + cellW / 2;
+        final cy = r * cellH + cellH / 2;
+        final side = cellW * 0.5;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+              center: Offset(cx, cy),
+              width: side,
+              height: side,
+            ),
+            const Radius.circular(3),
+          ),
+          squarePaint,
+        );
+      }
+    }
+  }
+
+  void _paintDotMatrix(Canvas canvas, Size size, Paint paint) {
+    // Animated cascading dot matrix
+    final dotPaint = Paint()..style = PaintingStyle.fill;
+    const cols = 4;
+    const rows = 5;
+    final cellW = size.width / cols;
+    final cellH = size.height / rows;
+
+    for (var c = 0; c < cols; c++) {
+      for (var r = 0; r < rows; r++) {
+        final phase = (progress * 2 * math.pi) - (c + r) * 0.4;
+        final alpha = 0.25 + 0.25 * math.sin(phase).abs();
+        dotPaint.color = color.withValues(alpha: alpha);
+        final cx = c * cellW + cellW / 2;
+        final cy = r * cellH + cellH / 2;
+        canvas.drawCircle(Offset(cx, cy), 3.5, dotPaint);
+      }
+    }
+  }
+
+  void _paintCircles(Canvas canvas, Size size, Paint paint) {
+    // Animated expanding concentric circles
+    final cx = size.width * 0.65;
+    final cy = size.height * 0.4;
+    const maxR = 50.0;
+    const circleCount = 4;
+    for (var i = 0; i < circleCount; i++) {
+      final phase = (progress + i / circleCount) % 1.0;
+      final r = maxR * phase;
+      final alpha = (1 - phase) * 0.50;
+      canvas.drawCircle(
+        Offset(cx, cy),
+        r,
+        Paint()
+          ..color = color.withValues(alpha: alpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CardPatternPainter old) =>
+      old.progress != progress || old.color != color || old.pattern != pattern;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Loading skeleton
+// Loading skeleton — grid cards
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _GroupCardSkeleton extends StatefulWidget {
@@ -1059,66 +1557,60 @@ class _GroupCardSkeletonState extends State<_GroupCardSkeleton>
   Widget build(BuildContext context) {
     final base =
         widget.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
-    final highlight = widget.colorScheme.surfaceContainerHighest
-        .withValues(alpha: 0.9);
+    final highlight =
+        widget.colorScheme.surfaceContainerHighest.withValues(alpha: 0.9);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.colorScheme.surface,
-        borderRadius: AppRadius.radiusXxl,
-        boxShadow: AppShadows.cardShadow(Theme.of(context).brightness),
-        border: Border.all(
-          color: widget.colorScheme.outlineVariant.withValues(alpha: 0.4),
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: AppRadius.radiusXxl,
-        child: AnimatedBuilder(
-          animation: _shimmerController,
-          builder: (context, _) {
-            final t = _shimmerController.value;
-            return Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: Row(
-                    children: [
-                      _SkeletonBox(size: 56, radius: AppRadius.radiusLg, color: base),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _SkeletonBox(width: 160, height: 16, color: base),
-                            const SizedBox(height: AppSpacing.sm),
-                            _SkeletonBox(width: 100, height: 12, color: base),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, _) {
+        final t = _shimmerController.value;
+        return Container(
+          decoration: BoxDecoration(
+            color: widget.colorScheme.surface,
+            borderRadius: AppRadius.radiusXl,
+            border: Border.all(
+              color: widget.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+          ),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SkeletonBox(width: 100, height: 14, color: base),
+                    const SizedBox(height: AppSpacing.xs),
+                    _SkeletonBox(width: 70, height: 10, color: base),
+                    const SizedBox(height: AppSpacing.sm),
+                    _SkeletonBox(width: 60, height: 18, color: base),
+                    const Spacer(),
+                    _SkeletonBox(width: 50, height: 10, color: base),
+                    const SizedBox(height: AppSpacing.xs),
+                    _SkeletonBox(width: 80, height: 14, color: base),
+                  ],
                 ),
-                // Shimmer sweep.
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment(-1 + 2 * t, 0),
-                        end: Alignment(-1 + 2 * t + 0.5, 0),
-                        colors: [
-                          Colors.transparent,
-                          highlight.withValues(alpha: 0.4),
-                          Colors.transparent,
-                        ],
-                      ),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: AppRadius.radiusXl,
+                    gradient: LinearGradient(
+                      begin: Alignment(-1 + 2 * t, 0),
+                      end: Alignment(-1 + 2 * t + 0.5, 0),
+                      colors: [
+                        Colors.transparent,
+                        highlight.withValues(alpha: 0.4),
+                        Colors.transparent,
+                      ],
                     ),
                   ),
                 ),
-              ],
-            );
-          },
-        ),
-      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -1128,24 +1620,132 @@ class _SkeletonBox extends StatelessWidget {
     this.width,
     this.height,
     required this.color,
-    this.size,
-    this.radius,
   });
 
   final double? width;
   final double? height;
-  final double? size;
   final Color color;
-  final BorderRadius? radius;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width ?? size,
-      height: height ?? size,
+      width: width,
+      height: height,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: radius ?? BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(6),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Promo card — "Create a new group" with asset image
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _PromoCard extends StatelessWidget {
+  const _PromoCard({
+    required this.colorScheme,
+    required this.isDark,
+    required this.onCreateGroup,
+  });
+
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final VoidCallback onCreateGroup;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        AppSpacing.md,
+        AppSpacing.screenHorizontal,
+        AppSpacing.sm,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: AppRadius.radiusXl,
+          boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              // Illustration
+              ClipRRect(
+                borderRadius: AppRadius.radiusMd,
+                child: Image.asset(
+                  'assets/images/group_celebration.png',
+                  width: 72,
+                  height: 72,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: AppRadius.radiusMd,
+                    ),
+                    child: Icon(
+                      Icons.celebration_rounded,
+                      color: colorScheme.primary,
+                      size: 36,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              // Text
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Create a new group',
+                      style: AppTextStyles.titleSmall.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Add friends and start splitting\nexpenses easily.',
+                      style: AppTextStyles.caption.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              // CTA button
+              FilledButton.icon(
+                onPressed: onCreateGroup,
+                icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
+                label: const Text('Create\nGroup'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: AppRadius.radiusLg,
+                  ),
+                  textStyle: AppTextStyles.labelSmall.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1175,7 +1775,6 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Floating icon cluster.
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.1, 0.5, curve: Curves.easeOutBack),
@@ -1256,7 +1855,6 @@ class _FloatingIconCluster extends StatelessWidget {
         animation: ambientController,
         builder: (context, _) {
           final t = ambientController.value;
-          // Gentle independent float for each satellite icon.
           final floatA = math.sin(t * 2 * math.pi) * 8;
           final floatB = math.sin(t * 2 * math.pi + 1.2) * 6;
           final floatC = math.sin(t * 2 * math.pi + 2.4) * 7;
@@ -1265,7 +1863,6 @@ class _FloatingIconCluster extends StatelessWidget {
           return Stack(
             alignment: Alignment.center,
             children: [
-              // Central gradient disc.
               Container(
                 width: 96,
                 height: 96,
@@ -1293,7 +1890,6 @@ class _FloatingIconCluster extends StatelessWidget {
                   color: colorScheme.onPrimary,
                 ),
               ),
-              // Orbiting satellites.
               Transform.rotate(
                 angle: rotate,
                 child: Stack(
@@ -1366,6 +1962,45 @@ class _Satellite extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// No-results state (filter returned empty)
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _NoResultsState extends StatelessWidget {
+  const _NoResultsState({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.filter_list_off_rounded,
+          size: 56,
+          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        Text(
+          'No groups match this filter',
+          style: AppTextStyles.titleSmall.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Try switching to "All Groups".',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Error state
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1415,7 +2050,7 @@ class _ErrorState extends StatelessWidget {
             interval: const Interval(0.25, 0.6, curve: Curves.easeOutCubic),
             slideOffset: 20,
             child: Text(
-              'Couldn\'t load groups',
+              "Couldn't load groups",
               style: AppTextStyles.headlineSmall.copyWith(
                 color: colorScheme.onSurface,
                 fontWeight: FontWeight.w700,
@@ -1461,29 +2096,3 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Decorative dot pattern painter (for hero banner corner)
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _DotPatternPainter extends CustomPainter {
-  const _DotPatternPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const spacing = 14.0;
-    const dotRadius = 2.0;
-    final paint = Paint()..color = color;
-
-    for (var x = 0.0; x < size.width; x += spacing) {
-      for (var y = 0.0; y < size.height; y += spacing) {
-        canvas.drawCircle(Offset(x, y), dotRadius, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DotPatternPainter oldDelegate) =>
-      color != oldDelegate.color;
-}
