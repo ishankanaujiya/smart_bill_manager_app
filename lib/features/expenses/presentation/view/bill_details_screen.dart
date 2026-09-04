@@ -275,29 +275,54 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
               // ── Receipt photo (if present) ────────────────────────────
               if (bill.receiptPhotoUrl != null &&
                   bill.receiptPhotoUrl!.isNotEmpty) ...[
-                Row(
-                  children: [
-                    Icon(Icons.photo_library_outlined,
-                        size: 18, color: colorScheme.primary),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      'Receipt',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        color: colorScheme.onSurface,
+                _StaggeredFadeIn(
+                  delay: const Duration(milliseconds: 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.photo_library_outlined,
+                              size: 18, color: colorScheme.primary),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(
+                            'Receipt',
+                            style: AppTextStyles.labelLarge.copyWith(
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: AppSpacing.sm),
+                      ClipRRect(
+                        borderRadius: AppRadius.radiusLg,
+                        child: Image.network(
+                          bill.receiptPhotoUrl!,
+                          height: 200,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                ClipRRect(
-                  borderRadius: AppRadius.radiusLg,
-                  child: Image.network(
-                    bill.receiptPhotoUrl!,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        const SizedBox.shrink(),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+
+              // ── Payment method(s) with QR code ───────────────────────
+              // Shows the payment option(s) chosen at creation time as
+              // tappable cards. Tapping a card opens the uploaded QR photo
+              // in a full-screen Hero-driven viewer with a dimming
+              // backdrop, instead of showing the photo inline.
+              if (bill.paymentMethods.isNotEmpty) ...[
+                _StaggeredFadeIn(
+                  delay: const Duration(milliseconds: 220),
+                  child: _PaymentMethodSection(
+                    bill: bill,
+                    colorScheme: colorScheme,
+                    isDark: isDark,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
@@ -509,6 +534,23 @@ class _BillDetailsSkeleton extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: base,
                       borderRadius: AppRadius.radiusXxl,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  // Payment method card skeleton.
+                  Row(
+                    children: [
+                      _SkeletonCircle(size: 18, color: base),
+                      const SizedBox(width: AppSpacing.sm),
+                      _SkeletonBox(width: 120, height: 16, color: base),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Container(
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: base,
+                      borderRadius: AppRadius.radiusLg,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xl),
@@ -819,4 +861,668 @@ class _AvatarFallback extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Staggered fade-in helper for section entrance animations
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A small wrapper that fades + slides its child in on first build, after an
+/// optional [delay]. Used to give each section of the bill details screen a
+/// subtle, professional staggered entrance once the shimmer clears.
+class _StaggeredFadeIn extends StatefulWidget {
+  const _StaggeredFadeIn({
+    required this.child,
+    this.delay = Duration.zero,
+  });
+
+  final Widget child;
+  final Duration delay;
+
+  @override
+  State<_StaggeredFadeIn> createState() => _StaggeredFadeInState();
+}
+
+class _StaggeredFadeInState extends State<_StaggeredFadeIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.0, 1.0, curve: Curves.easeOut),
+    );
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.04),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+
+    if (widget.delay == Duration.zero) {
+      _controller.forward();
+    } else {
+      Future.delayed(widget.delay, () {
+        if (mounted) _controller.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(
+        position: _slide,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Payment method section + cards
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Brand accent colors + logos for each payment method.
+/// Mirrors the values used in [PaymentOptionsCard] so the bill details screen
+/// feels like a continuation of the creation flow.
+Color _methodAccent(BillPaymentMethod m) {
+  return switch (m) {
+    BillPaymentMethod.esewa => const Color(0xFF60BB46),
+    BillPaymentMethod.khalti => const Color(0xFF5C2D91),
+    BillPaymentMethod.bank => AppColors.chartBlue,
+  };
+}
+
+String? _methodLogo(BillPaymentMethod m) {
+  return switch (m) {
+    BillPaymentMethod.esewa => 'assets/images/esewa.png',
+    BillPaymentMethod.khalti => 'assets/images/khalti.png',
+    BillPaymentMethod.bank => null,
+  };
+}
+
+String _methodLabel(BillPaymentMethod m) {
+  return switch (m) {
+    BillPaymentMethod.esewa => 'eSewa',
+    BillPaymentMethod.khalti => 'Khalti',
+    BillPaymentMethod.bank => 'Bank Transfer',
+  };
+}
+
+/// Renders the "Payment Method" header and one tappable card per method the
+/// bill creator selected. [Bill.paymentMethods] and [Bill.paymentQrUrls] are
+/// parallel arrays — we zip them, treating a missing/empty URL as "no QR
+/// uploaded" for that method.
+class _PaymentMethodSection extends StatelessWidget {
+  const _PaymentMethodSection({
+    required this.bill,
+    required this.colorScheme,
+    required this.isDark,
+  });
+
+  final Bill bill;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final methods = bill.paymentMethods;
+    final qrUrls = bill.paymentQrUrls;
+    final count = methods.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header.
+        Row(
+          children: [
+            Icon(
+              Icons.account_balance_wallet_rounded,
+              size: 18,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              'Payment Method',
+              style: AppTextStyles.labelLarge.copyWith(
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Tap a method to view its QR code',
+          style: AppTextStyles.labelSmall.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontSize: 11,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        for (int i = 0; i < count; i++)
+          Padding(
+            padding: EdgeInsets.only(bottom: i < count - 1 ? AppSpacing.sm : 0),
+            child: _PaymentMethodCard(
+              billId: bill.id,
+              index: i,
+              method: methods[i],
+              qrUrl: (i < qrUrls.length) ? qrUrls[i] : null,
+              bankName: bill.selectedBankName,
+              colorScheme: colorScheme,
+              isDark: isDark,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A single tappable payment-method card. Mirrors the visual language of the
+/// `_PaymentEntry` panel in [PaymentOptionsCard]: accent-tinted fill, accent
+/// border, brand logo on the left, label + subtitle in the middle, and a
+/// chevron / QR hint on the right.
+///
+/// Tapping the card (when a QR photo exists) opens [_PaymentQrViewer] via a
+/// Hero transition so the photo appears to grow out of the card.
+class _PaymentMethodCard extends StatefulWidget {
+  const _PaymentMethodCard({
+    required this.billId,
+    required this.index,
+    required this.method,
+    required this.qrUrl,
+    required this.bankName,
+    required this.colorScheme,
+    required this.isDark,
+  });
+
+  final String billId;
+  final int index;
+  final BillPaymentMethod method;
+  final String? qrUrl;
+  final String? bankName;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  State<_PaymentMethodCard> createState() => _PaymentMethodCardState();
+}
+
+class _PaymentMethodCardState extends State<_PaymentMethodCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+      lowerBound: 0.97,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  bool get _hasQr =>
+      widget.qrUrl != null && widget.qrUrl!.isNotEmpty;
+
+  String get _heroTag => 'payment-qr-${widget.billId}-${widget.index}';
+
+  String get _subtitle {
+    if (widget.method == BillPaymentMethod.bank) {
+      final name = widget.bankName;
+      return (name != null && name.isNotEmpty)
+          ? name
+          : 'Tap to view QR code';
+    }
+    return _hasQr ? 'Tap to view QR code' : 'No QR code uploaded';
+  }
+
+  void _openViewer() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 260),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _PaymentQrViewer(
+          heroTag: _heroTag,
+          qrUrl: widget.qrUrl!,
+          method: widget.method,
+          colorScheme: widget.colorScheme,
+          isDark: widget.isDark,
+          animation: animation,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            child,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = widget.colorScheme;
+    final accent = _methodAccent(widget.method);
+    final logo = _methodLogo(widget.method);
+
+    return ScaleTransition(
+      scale: _press,
+      child: GestureDetector(
+        onTapDown: (_) {
+          if (_hasQr) _press.reverse();
+        },
+        onTapUp: (_) {
+          _press.forward();
+          if (_hasQr) _openViewer();
+        },
+        onTapCancel: () => _press.forward(),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: widget.isDark ? 0.08 : 0.05),
+            borderRadius: AppRadius.radiusLg,
+            border: Border.all(
+              color: accent.withValues(alpha: _hasQr ? 0.35 : 0.18),
+              width: 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Brand logo / icon.
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: cs.surface.withValues(alpha: 0.85),
+                  borderRadius: AppRadius.radiusMd,
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.25),
+                    width: 0.8,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Center(
+                  child: logo != null
+                      ? Image.asset(
+                          logo,
+                          width: 28,
+                          height: 28,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.payment_rounded,
+                            size: 24,
+                            color: accent,
+                          ),
+                        )
+                      : Icon(
+                          Icons.account_balance_rounded,
+                          size: 24,
+                          color: accent,
+                        ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+
+              // Label + subtitle.
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _methodLabel(widget.method),
+                      style: AppTextStyles.titleSmall.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _subtitle,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: _hasQr
+                            ? cs.onSurfaceVariant
+                            : cs.onSurfaceVariant.withValues(alpha: 0.6),
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Trailing QR hint / chevron.
+              if (_hasQr)
+                Hero(
+                  tag: _heroTag,
+                  flightShuttleBuilder: _qrFlightShuttleBuilder,
+                  child: Container(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: AppRadius.radiusSm,
+                    ),
+                    child: Icon(
+                      Icons.qr_code_2_rounded,
+                      size: 20,
+                      color: accent,
+                    ),
+                  ),
+                )
+              else
+                Icon(
+                  Icons.qr_code_2_outlined,
+                  size: 20,
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Full-screen QR viewer (Hero-driven, dimming backdrop)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Full-screen viewer for a payment QR photo.
+///
+/// The image flies in from the card's trailing QR chip via a [Hero] transition
+/// (tag = [heroTag]). On top of the Hero flight, the backdrop fades from
+/// transparent to a dimmed black and the image scales up slightly, giving a
+/// polished "grow out of the card" feel. Dismiss by tapping the backdrop or
+/// swiping down.
+class _PaymentQrViewer extends StatefulWidget {
+  const _PaymentQrViewer({
+    required this.heroTag,
+    required this.qrUrl,
+    required this.method,
+    required this.colorScheme,
+    required this.isDark,
+    required this.animation,
+  });
+
+  final String heroTag;
+  final String qrUrl;
+  final BillPaymentMethod method;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final Animation<double> animation;
+
+  @override
+  State<_PaymentQrViewer> createState() => _PaymentQrViewerState();
+}
+
+class _PaymentQrViewerState extends State<_PaymentQrViewer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _dismissController;
+
+  @override
+  void initState() {
+    super.initState();
+    _dismissController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      value: 1.0, // 1.0 = fully visible
+    );
+  }
+
+  @override
+  void dispose() {
+    _dismissController.dispose();
+    super.dispose();
+  }
+
+  Color get _accent => _methodAccent(widget.method);
+  String get _label => _methodLabel(widget.method);
+
+  Future<void> _close() async {
+    await _dismissController.reverse();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Backdrop fades with the route animation; image scales in on top.
+    final backdropFade = Tween<double>(begin: 0.0, end: 0.6).animate(
+      CurvedAnimation(
+        parent: widget.animation,
+        curve: Curves.easeOut,
+      ),
+    );
+    final imageScale = Tween<double>(begin: 0.88, end: 1.0).animate(
+      CurvedAnimation(
+        parent: widget.animation,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    final contentFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: widget.animation,
+        curve: const Interval(0.25, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([widget.animation, _dismissController]),
+      builder: (context, _) {
+        // Combine route animation with the manual dismiss controller so a
+        // swipe-down dismiss dims the backdrop smoothly.
+        final dismissValue = _dismissController.value;
+        final backdropOpacity = backdropFade.value * dismissValue;
+        final scale = imageScale.value * dismissValue;
+        final contentOpacity = contentFade.value * dismissValue;
+
+        return Material(
+          color: Colors.transparent,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _close,
+            onVerticalDragEnd: (details) {
+              if (details.primaryVelocity != null &&
+                  details.primaryVelocity! > 220) {
+                _close();
+              }
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Dimming backdrop.
+                IgnorePointer(
+                  child: ColoredBox(
+                    color: Colors.black.withValues(alpha: backdropOpacity),
+                  ),
+                ),
+
+                // Centered QR image with Hero.
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xl,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Method label chip.
+                        Opacity(
+                          opacity: contentOpacity,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.md,
+                              vertical: AppSpacing.sm,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _accent.withValues(alpha: 0.16),
+                              borderRadius: AppRadius.radiusFull,
+                              border: Border.all(
+                                color: _accent.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.qr_code_2_rounded,
+                                  size: 14,
+                                  color: _accent,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '$_label QR Code',
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                    color: _accent,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+
+                        // Hero image.
+                        Hero(
+                          tag: widget.heroTag,
+                          flightShuttleBuilder: _qrFlightShuttleBuilder,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: Transform.scale(
+                              scale: scale,
+                              child: ClipRRect(
+                                borderRadius: AppRadius.radiusXxl,
+                                child: Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width * 0.82,
+                                    maxHeight:
+                                        MediaQuery.of(context).size.height * 0.6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: AppRadius.radiusXxl,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.35),
+                                        blurRadius: 40,
+                                        spreadRadius: 2,
+                                        offset: const Offset(0, 12),
+                                      ),
+                                    ],
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Image.network(
+                                    widget.qrUrl,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.xxl,
+                                      ),
+                                      color: Colors.white,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.broken_image_outlined,
+                                            size: 48,
+                                            color: Colors.grey.shade400,
+                                          ),
+                                          const SizedBox(height: AppSpacing.sm),
+                                          Text(
+                                            'Could not load QR code',
+                                            style: AppTextStyles.labelMedium
+                                                .copyWith(
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+
+                        // Dismiss hint.
+                        Opacity(
+                          opacity: contentOpacity,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 16,
+                                color: Colors.white.withValues(alpha: 0.7),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Tap or swipe down to close',
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Shared Hero flight shuttle builder so the QR chip morphs cleanly into the
+/// full-screen image (and back) regardless of the route's own transition.
+Widget _qrFlightShuttleBuilder(
+  BuildContext flightContext,
+  Animation<double> animation,
+  HeroFlightDirection flightDirection,
+  BuildContext fromHeroContext,
+  BuildContext toHeroContext,
+) {
+  return FadeTransition(
+    opacity: animation,
+    child: flightDirection == HeroFlightDirection.push
+        ? toHeroContext.widget
+        : fromHeroContext.widget,
+  );
 }
