@@ -11,8 +11,9 @@ import '../../../expenses/presentation/view/bill_details_screen.dart';
 import '../../../expenses/presentation/view/create_bill_screen.dart';
 import '../../domain/entities/group.dart';
 
-/// Group details screen — shows the group's header, a real-time list of
-/// bills in the group, and a prominent CTA to create a new bill.
+/// Group details screen — shows the group's header, stats summary,
+/// a real-time list of bills in the group, and a prominent CTA to
+/// create a new bill.
 ///
 /// When the group has no bills yet, an animated empty state with a
 /// "Create Bill" button is shown instead of the list.
@@ -98,58 +99,65 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
           physics: const BouncingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
-          slivers: [
-            // ── App bar ─────────────────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: _TopBar(
-                colorScheme: colorScheme,
-                onBack: () => Navigator.of(context).pop(),
-              ),
-            ),
-            // ── Group hero header ───────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: _GroupHeroHeader(
-                group: widget.group,
-                entranceController: _entranceController,
-                ambientController: _ambientController,
-                colorScheme: colorScheme,
-                isDark: isDark,
-              ),
-            ),
-            // ── Bills section ───────────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screenHorizontal,
-                  AppSpacing.xl,
-                  AppSpacing.screenHorizontal,
-                  AppSpacing.sm,
+          slivers: billsAsync.when(
+            data: (bills) => [
+              // ── App bar ─────────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: _TopBar(
+                  group: widget.group,
+                  colorScheme: colorScheme,
+                  onBack: () => Navigator.of(context).pop(),
                 ),
-                child: Row(
-                  children: [
-                    Text(
-                      'Bills',
-                      style: AppTextStyles.titleMedium.copyWith(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w700,
+              ),
+              // ── Group hero header ───────────────────────────────────────
+              SliverToBoxAdapter(
+                child: _GroupHeroHeader(
+                  group: widget.group,
+                  entranceController: _entranceController,
+                  ambientController: _ambientController,
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                ),
+              ),
+              // ── Stats row ───────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: _StatsRow(
+                  bills: bills,
+                  currentUserId: widget.currentUserId,
+                  entranceController: _entranceController,
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                ),
+              ),
+              // ── Bills section header ────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.screenHorizontal,
+                    AppSpacing.xl,
+                    AppSpacing.screenHorizontal,
+                    AppSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Bills',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    billsAsync.when(
-                      data: (bills) => _CountPill(
+                      const SizedBox(width: AppSpacing.sm),
+                      _CountPill(
                         count: bills.length,
                         colorScheme: colorScheme,
                       ),
-                      loading: () => const SizedBox.shrink(),
-                      error: (_, __) => const SizedBox.shrink(),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            // ── Bills list / empty state ────────────────────────────────────
-            billsAsync.when(
-              data: (bills) => bills.isEmpty
+              // ── Bills list / empty state ────────────────────────────────
+              bills.isEmpty
                   ? SliverFillRemaining(
                       hasScrollBody: false,
                       child: _BillsEmptyState(
@@ -161,8 +169,36 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
                       ),
                     )
                   : _buildBillsList(bills, colorScheme, isDark),
-              loading: () => _buildBillsLoading(colorScheme),
-              error: (error, _) => SliverFillRemaining(
+              // ── Promo card ──────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: _PromoCard(
+                  entranceController: _entranceController,
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                  onCreateBill: _openCreateBill,
+                ),
+              ),
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 120),
+              ),
+            ],
+            loading: () => [
+              SliverToBoxAdapter(
+                child: _GroupDetailsSkeleton(
+                  colorScheme: colorScheme,
+                  isDark: isDark,
+                ),
+              ),
+            ],
+            error: (error, _) => [
+              SliverToBoxAdapter(
+                child: _TopBar(
+                  group: widget.group,
+                  colorScheme: colorScheme,
+                  onBack: () => Navigator.of(context).pop(),
+                ),
+              ),
+              SliverFillRemaining(
                 hasScrollBody: false,
                 child: _BillsErrorState(
                   colorScheme: colorScheme,
@@ -171,11 +207,8 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
                   ),
                 ),
               ),
-            ),
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 120),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       // ── Floating create-bill FAB ────────────────────────────────────────
@@ -239,24 +272,6 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
     );
   }
 
-  Widget _buildBillsLoading(ColorScheme colorScheme) {
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.screenHorizontal,
-        vertical: AppSpacing.sm,
-      ),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _BillCardSkeleton(colorScheme: colorScheme),
-          ),
-          childCount: 4,
-        ),
-      ),
-    );
-  }
-
   /// Picks a deterministic accent color per bill.
   Color _billColor(int index) {
     final palette = Theme.of(context).brightness == Brightness.dark
@@ -271,8 +286,13 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.colorScheme, required this.onBack});
+  const _TopBar({
+    required this.group,
+    required this.colorScheme,
+    required this.onBack,
+  });
 
+  final Group group;
   final ColorScheme colorScheme;
   final VoidCallback onBack;
 
@@ -282,28 +302,70 @@ class _TopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.sm,
-        AppSpacing.screenHorizontal,
+        AppSpacing.sm,
         AppSpacing.sm,
       ),
       child: Row(
         children: [
-          Material(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-            shape: const CircleBorder(),
-            child: InkWell(
-              onTap: onBack,
-              customBorder: const CircleBorder(),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                child: Icon(
-                  Icons.arrow_back_rounded,
-                  color: colorScheme.onSurface,
-                  size: 22,
-                ),
+          _CircleButton(
+            icon: Icons.arrow_back_rounded,
+            colorScheme: colorScheme,
+            onTap: onBack,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              group.groupName,
+              style: AppTextStyles.titleMedium.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          _CircleButton(
+            icon: Icons.more_horiz_rounded,
+            colorScheme: colorScheme,
+            onTap: () {},
+          ),
         ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Circle button
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _CircleButton extends StatelessWidget {
+  const _CircleButton({
+    required this.icon,
+    required this.colorScheme,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final ColorScheme colorScheme;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Icon(
+            icon,
+            color: colorScheme.onSurface,
+            size: 22,
+          ),
+        ),
       ),
     );
   }
@@ -626,6 +688,160 @@ class _MemberChip extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Stats row — Total Bills, Total Amount, Your Share
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _StatsRow extends StatelessWidget {
+  const _StatsRow({
+    required this.bills,
+    required this.currentUserId,
+    required this.entranceController,
+    required this.colorScheme,
+    required this.isDark,
+  });
+
+  final List<Bill> bills;
+  final String currentUserId;
+  final AnimationController entranceController;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalBills = bills.length;
+    final totalAmount = bills.fold<double>(0, (sum, b) => sum + b.totalAmount);
+    final yourShare = bills.fold<double>(
+      0,
+      (sum, b) => sum + b.shareFor(currentUserId),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.screenHorizontal,
+        vertical: AppSpacing.sm,
+      ),
+      child: StaggeredEntrance(
+        animation: entranceController,
+        interval: const Interval(0.15, 0.50, curve: Curves.easeOutCubic),
+        slideOffset: 24,
+        child: Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                icon: Icons.receipt_long_rounded,
+                label: 'Total Bills',
+                value: '$totalBills',
+                color: AppColors.chartBlue,
+                colorScheme: colorScheme,
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _StatCard(
+                icon: Icons.account_balance_wallet_rounded,
+                label: 'Total Amount',
+                value: AppConstants.formatCurrency(
+                  totalAmount,
+                  withSymbol: true,
+                ),
+                color: AppColors.chartGreen,
+                colorScheme: colorScheme,
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _StatCard(
+                icon: Icons.person_rounded,
+                label: 'Your Share',
+                value: AppConstants.formatCurrency(
+                  yourShare,
+                  withSymbol: true,
+                ),
+                color: AppColors.chartOrange,
+                colorScheme: colorScheme,
+                isDark: isDark,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.colorScheme,
+    required this.isDark,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppRadius.radiusLg,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+        boxShadow: isDark ? AppShadows.xsDark : AppShadows.xsLight,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: AppRadius.radiusSm,
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            label,
+            style: AppTextStyles.labelSmall.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: AppTextStyles.titleSmall.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Count pill
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -658,7 +874,7 @@ class _CountPill extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Bill card
+// Bill card — surface card with colored accent strip
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _BillCard extends StatefulWidget {
@@ -719,120 +935,146 @@ class _BillCardState extends State<_BillCard>
           return Transform.scale(scale: scale, child: child);
         },
         child: Container(
-          padding: const EdgeInsets.all(AppSpacing.xl),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: widget.isDark
-                  ? AppColors.darkPrimaryGradient.colors
-                  : AppColors.lightPrimaryGradient.colors,
+            color: colorScheme.surface,
+            borderRadius: AppRadius.radiusXl,
+            border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.4),
             ),
-            borderRadius: AppRadius.radiusXxl,
             boxShadow: widget.isDark
-                ? AppShadows.primaryGlowDark
-                : AppShadows.primaryGlowLight,
+                ? AppShadows.xsDark
+                : AppShadows.xsLight,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title + payment status badge.
-              Row(
+          child: ClipRRect(
+            borderRadius: AppRadius.radiusXl,
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── Colored icon circle ───────────────────────────────────
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(alpha: 0.12),
+                      borderRadius: AppRadius.radiusMd,
+                    ),
+                    child: Icon(
+                      Icons.receipt_long_rounded,
+                      size: 22,
+                      color: widget.color,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  // ── Main content ──────────────────────────────────────────
                   Expanded(
-                    child: Text(
-                      bill.title,
-                      style: AppTextStyles.titleLarge.copyWith(
-                        color: colorScheme.onPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Title + payment status badge.
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                bill.title,
+                                style: AppTextStyles.titleMedium.copyWith(
+                                  color: colorScheme.onSurface,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            _PaymentStatusBadge(
+                              status: bill.paymentStatus,
+                              colorScheme: colorScheme,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        // Split mode + member count.
+                        Row(
+                          children: [
+                            Icon(
+                              bill.splitMode == BillSplitMode.equal
+                                  ? Icons.people_alt_rounded
+                                  : Icons.tune_rounded,
+                              size: 14,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              bill.splitMode == BillSplitMode.equal
+                                  ? 'Equal Split'
+                                  : 'Custom Split',
+                              style: AppTextStyles.caption.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text(
+                              '${bill.includedCount} member${bill.includedCount == 1 ? '' : 's'}',
+                              style: AppTextStyles.caption.copyWith(
+                                color: colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        // Total + Date row.
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Total',
+                                  style: AppTextStyles.labelSmall.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                Text(
+                                  AppConstants.formatCurrency(
+                                    bill.totalAmount,
+                                    withSymbol: true,
+                                  ),
+                                  style: AppTextStyles.amountMedium.copyWith(
+                                    color: widget.color,
+                                    fontSize: 20,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'Date',
+                                  style: AppTextStyles.labelSmall.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                Text(
+                                  _formatDate(date),
+                                  style: AppTextStyles.labelLarge.copyWith(
+                                    color: colorScheme.onSurface,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  _PaymentStatusPill(
-                    status: bill.paymentStatus,
-                    onPrimary: colorScheme.onPrimary,
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.xs),
-              // Split mode + member count.
-              Row(
-                children: [
-                  Icon(
-                    bill.splitMode == BillSplitMode.equal
-                        ? Icons.people_alt_rounded
-                        : Icons.tune_rounded,
-                    size: 14,
-                    color: colorScheme.onPrimary.withValues(alpha: 0.75),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    bill.splitMode == BillSplitMode.equal
-                        ? 'Equal Split'
-                        : 'Custom Split',
-                    style: AppTextStyles.caption.copyWith(
-                      color: colorScheme.onPrimary.withValues(alpha: 0.75),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    '${bill.includedCount} member${bill.includedCount == 1 ? '' : 's'}',
-                    style: AppTextStyles.caption.copyWith(
-                      color: colorScheme.onPrimary.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              // Total + Date row.
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: colorScheme.onPrimary
-                              .withValues(alpha: 0.7),
-                        ),
-                      ),
-                      Text(
-                        AppConstants.formatCurrency(
-                          bill.totalAmount,
-                          withSymbol: true,
-                        ),
-                        style: AppTextStyles.amountMedium.copyWith(
-                          color: colorScheme.onPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'Date',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: colorScheme.onPrimary
-                              .withValues(alpha: 0.7),
-                        ),
-                      ),
-                      Text(
-                        _formatDate(date),
-                        style: AppTextStyles.labelLarge.copyWith(
-                          color: colorScheme.onPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -849,24 +1091,36 @@ class _BillCardState extends State<_BillCard>
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Payment status pill (for gradient cards — uses onPrimary)
+// Payment status badge (surface card version)
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _PaymentStatusPill extends StatelessWidget {
-  const _PaymentStatusPill({
+class _PaymentStatusBadge extends StatelessWidget {
+  const _PaymentStatusBadge({
     required this.status,
-    required this.onPrimary,
+    required this.colorScheme,
   });
 
   final BillPaymentStatus status;
-  final Color onPrimary;
+  final ColorScheme colorScheme;
 
   @override
   Widget build(BuildContext context) {
-    final (label, alpha) = switch (status) {
-      BillPaymentStatus.paid => ('Paid', 0.95),
-      BillPaymentStatus.partiallyPaid => ('Partial', 0.9),
-      BillPaymentStatus.unpaid => ('Unpaid', 0.85),
+    final (label, bgColor, textColor) = switch (status) {
+      BillPaymentStatus.paid => (
+        'Paid',
+        AppColors.success.withValues(alpha: 0.12),
+        AppColors.success,
+      ),
+      BillPaymentStatus.partiallyPaid => (
+        'Partial',
+        AppColors.warning.withValues(alpha: 0.12),
+        AppColors.warning,
+      ),
+      BillPaymentStatus.unpaid => (
+        'Unpaid',
+        AppColors.error.withValues(alpha: 0.12),
+        AppColors.error,
+      ),
     };
 
     return Container(
@@ -875,17 +1129,13 @@ class _PaymentStatusPill extends StatelessWidget {
         vertical: 3,
       ),
       decoration: BoxDecoration(
-        color: onPrimary.withValues(alpha: 0.2),
+        color: bgColor,
         borderRadius: AppRadius.radiusFull,
-        border: Border.all(
-          color: onPrimary.withValues(alpha: 0.25),
-          width: 0.5,
-        ),
       ),
       child: Text(
         label,
         style: AppTextStyles.labelSmall.copyWith(
-          color: onPrimary.withValues(alpha: alpha),
+          color: textColor,
           fontWeight: FontWeight.w700,
           fontSize: 10,
           height: 1.2,
@@ -897,19 +1147,20 @@ class _PaymentStatusPill extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Bill card skeleton
+// Full-screen skeleton for group details loading state
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _BillCardSkeleton extends StatefulWidget {
-  const _BillCardSkeleton({required this.colorScheme});
+class _GroupDetailsSkeleton extends StatefulWidget {
+  const _GroupDetailsSkeleton({required this.colorScheme, required this.isDark});
 
   final ColorScheme colorScheme;
+  final bool isDark;
 
   @override
-  State<_BillCardSkeleton> createState() => _BillCardSkeletonState();
+  State<_GroupDetailsSkeleton> createState() => _GroupDetailsSkeletonState();
 }
 
-class _BillCardSkeletonState extends State<_BillCardSkeleton>
+class _GroupDetailsSkeletonState extends State<_GroupDetailsSkeleton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmerController;
 
@@ -930,68 +1181,196 @@ class _BillCardSkeletonState extends State<_BillCardSkeleton>
 
   @override
   Widget build(BuildContext context) {
-    final base =
-        widget.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
-    final highlight =
-        widget.colorScheme.surfaceContainerHighest.withValues(alpha: 0.9);
+    final base = widget.colorScheme.surfaceContainerHighest
+        .withValues(alpha: 0.5);
+    final highlight = widget.colorScheme.surfaceContainerHighest
+        .withValues(alpha: 0.9);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.colorScheme.surface,
-        borderRadius: AppRadius.radiusXxl,
-        boxShadow: AppShadows.cardShadow(Theme.of(context).brightness),
-        border: Border.all(
-          color: widget.colorScheme.outlineVariant.withValues(alpha: 0.4),
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: AppRadius.radiusXxl,
-        child: AnimatedBuilder(
-          animation: _shimmerController,
-          builder: (context, _) {
-            final t = _shimmerController.value;
-            return Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: Row(
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, _) {
+        final t = _shimmerController.value;
+        return Stack(
+          children: [
+            SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screenHorizontal,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top bar skeleton.
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      top: AppSpacing.sm,
+                      bottom: AppSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        _SkeletonCircle(size: 40, color: base),
+                        const SizedBox(width: AppSpacing.md),
+                        _SkeletonBox(
+                            width: 120, height: 16, color: base),
+                        const Spacer(),
+                        _SkeletonCircle(size: 40, color: base),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  // Hero header skeleton.
+                  Container(
+                    height: 180,
+                    decoration: BoxDecoration(
+                      color: base,
+                      borderRadius: AppRadius.radiusXxl,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  // Stats row skeleton.
+                  Row(
                     children: [
-                      _SkeletonBox(
-                          size: 48, radius: AppRadius.radiusMd, color: base),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _SkeletonBox(width: 140, height: 14, color: base),
-                            const SizedBox(height: AppSpacing.sm),
-                            _SkeletonBox(width: 90, height: 12, color: base),
-                          ],
-                        ),
-                      ),
-                      _SkeletonBox(width: 80, height: 14, color: base),
+                      Expanded(child: _StatCardSkeleton(color: base)),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(child: _StatCardSkeleton(color: base)),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(child: _StatCardSkeleton(color: base)),
                     ],
                   ),
-                ),
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment(-1 + 2 * t, 0),
-                        end: Alignment(-1 + 2 * t + 0.5, 0),
-                        colors: [
-                          Colors.transparent,
-                          highlight.withValues(alpha: 0.4),
-                          Colors.transparent,
-                        ],
-                      ),
+                  const SizedBox(height: AppSpacing.xl),
+                  // Bills header skeleton.
+                  Row(
+                    children: [
+                      _SkeletonBox(width: 60, height: 18, color: base),
+                      const SizedBox(width: AppSpacing.sm),
+                      _SkeletonBox(width: 24, height: 18, color: base),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  // Bill card skeletons.
+                  for (var i = 0; i < 4; i++) ...[
+                    _BillCardSkeletonBox(color: base),
+                    if (i < 3) const SizedBox(height: AppSpacing.md),
+                  ],
+                ],
+              ),
+            ),
+            // Shimmer overlay.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment(-1 + 2 * t, 0),
+                      end: Alignment(-1 + 2 * t + 0.5, 0),
+                      colors: [
+                        Colors.transparent,
+                        highlight.withValues(alpha: 0.25),
+                        Colors.transparent,
+                      ],
                     ),
                   ),
                 ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _StatCardSkeleton extends StatelessWidget {
+  const _StatCardSkeleton({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: AppRadius.radiusLg,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SkeletonBox(size: 28, radius: AppRadius.radiusSm, color: color),
+          const SizedBox(height: AppSpacing.sm),
+          _SkeletonBox(width: 50, height: 10, color: color),
+          const SizedBox(height: 4),
+          _SkeletonBox(width: 70, height: 14, color: color),
+        ],
+      ),
+    );
+  }
+}
+
+class _BillCardSkeletonBox extends StatelessWidget {
+  const _BillCardSkeletonBox({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: AppRadius.radiusXl,
+      ),
+      child: Row(
+        children: [
+          _SkeletonBox(size: 44, radius: AppRadius.radiusMd, color: color),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SkeletonBox(
+                          width: double.infinity, height: 16, color: color),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _SkeletonBox(width: 50, height: 14, color: color),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _SkeletonBox(width: 100, height: 11, color: color),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _SkeletonBox(width: 80, height: 18, color: color),
+                    _SkeletonBox(width: 70, height: 14, color: color),
+                  ],
+                ),
               ],
-            );
-          },
-        ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonCircle extends StatelessWidget {
+  const _SkeletonCircle({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
       ),
     );
   }
@@ -1240,6 +1619,136 @@ class _BillsErrorState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Promo card — celebration image with CTA
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _PromoCard extends StatelessWidget {
+  const _PromoCard({
+    required this.entranceController,
+    required this.colorScheme,
+    required this.isDark,
+    required this.onCreateBill,
+  });
+
+  final AnimationController entranceController;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final VoidCallback onCreateBill;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        AppSpacing.lg,
+        AppSpacing.screenHorizontal,
+        AppSpacing.sm,
+      ),
+      child: StaggeredEntrance(
+        animation: entranceController,
+        interval: const Interval(0.40, 0.75, curve: Curves.easeOutCubic),
+        slideOffset: 28,
+        child: GestureDetector(
+          onTap: onCreateBill,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: AppRadius.radiusXl,
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: isDark
+                    ? AppColors.darkPrimaryGradient.colors
+                    : AppColors.lightPrimaryGradient.colors,
+              ),
+              boxShadow: isDark
+                  ? AppShadows.primaryGlowDark
+                  : AppShadows.primaryGlowLight,
+            ),
+            child: ClipRRect(
+              borderRadius: AppRadius.radiusXl,
+              child: Stack(
+                children: [
+                  // Celebration image on the right.
+                  Positioned(
+                    right: -10,
+                    top: -10,
+                    bottom: -10,
+                    width: 120,
+                    child: Image.asset(
+                      'assets/images/group_celebration.png',
+                      fit: BoxFit.contain,
+                      alignment: Alignment.centerRight,
+                    ),
+                  ),
+                  // Content.
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Split a New Bill',
+                          style: AppTextStyles.titleMedium.copyWith(
+                            color: colorScheme.onPrimary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          'Create and share expenses\nwith your group members.',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: colorScheme.onPrimary
+                                .withValues(alpha: 0.85),
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        // CTA pill.
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                            vertical: AppSpacing.xs,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: AppRadius.radiusFull,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Create Bill',
+                                style: AppTextStyles.labelLarge.copyWith(
+                                  color: colorScheme.onPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 16,
+                                color: colorScheme.onPrimary,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
