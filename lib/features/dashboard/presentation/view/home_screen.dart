@@ -664,30 +664,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ),
-      child: Column(
-        children: [
-          Icon(
-            Icons.groups_2_outlined,
-            size: 48,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'No groups yet',
-            style: AppTextStyles.titleSmall.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.groups_2_outlined,
+              size: 48,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Create a group to start splitting bills.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: colorScheme.onSurfaceVariant,
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'No groups yet',
+              style: AppTextStyles.titleSmall.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Create a group to start splitting bills.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

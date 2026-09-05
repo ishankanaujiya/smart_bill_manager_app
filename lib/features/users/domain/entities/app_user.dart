@@ -41,15 +41,18 @@ class AppUser {
   /// May be `null` for email/password users who haven't uploaded one.
   final String? profilePicture;
 
-  /// Returns `true` when every field has a non-null value.
+  /// Returns `true` when the core profile fields are populated.
   ///
   /// Used after Google sign-in to decide whether the user needs to
   /// complete the registration flow before reaching the home screen.
+  ///
+  /// [phoneNumber] is intentionally excluded — Google does not provide a
+  /// phone number, so requiring it here would always route Google users
+  /// through profile completion. The phone number can be collected later
+  /// from within the app.
   bool get isProfileComplete =>
       fullName.isNotEmpty &&
       email.isNotEmpty &&
-      phoneNumber != null &&
-      phoneNumber!.isNotEmpty &&
       displayName != null &&
       displayName!.isNotEmpty;
 

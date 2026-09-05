@@ -1,14 +1,18 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/presentation/app_shell.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../users/domain/entities/app_user.dart';
 import '../state/auth_providers.dart';
 import '../widget/auth_header.dart';
 import '../widget/auth_text_field.dart';
+import '../widget/profile_photo_bottom_sheet.dart';
 import '../widget/registration_step_indicator.dart';
 import 'registration_done_screen.dart';
 
@@ -58,6 +62,10 @@ class _RegistrationProfileScreenState
   // ── Avatar state ──
   final _colors = AppColors.chartColorsDark.sublist(0, 5);
   int _selectedColorIndex = 0;
+
+  // ── Profile photo state ──
+  String? _profilePhotoPath;
+  bool _isPicking = false;
 
   // ── Entrance animation ──
   late final AnimationController _entranceController;
@@ -115,6 +123,52 @@ class _RegistrationProfileScreenState
     return '?';
   }
 
+  Future<void> _onPickProfilePhoto() async {
+    if (_isPicking) return;
+
+    final option = await ProfilePhotoBottomSheet.show(
+      context,
+      showRemoveOption: _profilePhotoPath != null,
+    );
+    if (option == null || !mounted) return;
+
+    switch (option) {
+      case ProfilePhotoOption.remove:
+        setState(() => _profilePhotoPath = null);
+      case ProfilePhotoOption.camera:
+      case ProfilePhotoOption.gallery:
+        await _pickImageFromSource(option);
+    }
+  }
+
+  Future<void> _pickImageFromSource(ProfilePhotoOption option) async {
+    // Guard against concurrent picker invocations — Android only allows
+    // one activity-result at a time. This flag is internal only and does
+    // NOT drive any UI loading state; the picker has its own native UI.
+    _isPicking = true;
+
+    try {
+      final source = option == ProfilePhotoOption.camera
+          ? ImageSource.camera
+          : ImageSource.gallery;
+
+      final xFile = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (!mounted) return;
+
+      if (xFile != null) {
+        setState(() => _profilePhotoPath = xFile.path);
+      }
+    } finally {
+      _isPicking = false;
+    }
+  }
+
   Future<void> _onFinish() async {
     final name = _displayNameController.text.trim();
     if (name.isEmpty) {
@@ -134,6 +188,7 @@ class _RegistrationProfileScreenState
         fullName: widget.fullName,
         phoneNumber: widget.phoneNumber,
         displayName: displayName,
+        profilePicturePath: _profilePhotoPath,
       );
 
       if (!mounted) return;
@@ -158,6 +213,7 @@ class _RegistrationProfileScreenState
       password: widget.password!,
       phoneNumber: widget.phoneNumber,
       displayName: displayName,
+      profilePicturePath: _profilePhotoPath,
     );
 
     if (!mounted) return;
@@ -194,12 +250,11 @@ class _RegistrationProfileScreenState
     final errorMsg = message ??
         (state is AuthActionError ? state.message : 'Registration failed.');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(errorMsg),
-        backgroundColor: Theme.of(context).colorScheme.error,
-        duration: const Duration(seconds: 3),
-      ),
+    AppSnackBar.show(
+      context,
+      title: 'Could not finish setup',
+      message: errorMsg,
+      type: AppSnackBarType.error,
     );
     ref.read(authActionProvider.notifier).reset();
   }
@@ -223,7 +278,7 @@ class _RegistrationProfileScreenState
                       const SizedBox(height: AppSpacing.md),
 
                       // Step indicator
-                      const RegistrationStepIndicator(currentStep: 2),
+                      const RegistrationStepIndicator(currentStep: 1),
 
                       const SizedBox(height: AppSpacing.xxl),
 
@@ -249,6 +304,10 @@ class _RegistrationProfileScreenState
                                 child: _AvatarWithBadge(
                                   initials: _initials,
                                   color: avatarColor,
+                                  photoPath: _profilePhotoPath,
+                                  isUploading: ref.watch(authActionProvider)
+                                      is AuthActionLoading,
+                                  onTap: _onPickProfilePhoto,
                                 ),
                               ),
 
@@ -353,73 +412,220 @@ class _RegistrationProfileScreenState
 }
 
 /// Large avatar placeholder with a small camera badge.
+///
+/// When [photoPath] is non-null, the selected image is displayed instead of
+/// the initials and the avatar grows to a larger size to showcase the photo.
+/// Tapping the avatar or badge opens the photo picker bottom sheet. A
+/// loading overlay is shown only while the photo is being uploaded to
+/// Cloudinary ([isUploading]).
 class _AvatarWithBadge extends StatelessWidget {
   const _AvatarWithBadge({
     required this.initials,
     required this.color,
+    this.photoPath,
+    this.isUploading = false,
+    this.onTap,
   });
+
+  /// Avatar size used when no photo has been picked (initials only).
+  static const double _compactSize = 100;
+
+  /// Avatar size used once a photo has been picked.
+  static const double _expandedSize = 140;
+
+  /// Camera badge size — scales with the avatar.
+  static const double _compactBadge = 36;
+  static const double _expandedBadge = 42;
 
   final String initials;
   final Color color;
+  final String? photoPath;
+  final bool isUploading;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final showOverlay = isUploading && photoPath != null;
+    final hasPhoto = photoPath != null;
+    final avatarSize = hasPhoto ? _expandedSize : _compactSize;
+    final badgeSize = hasPhoto ? _expandedBadge : _compactBadge;
 
-    return SizedBox(
-      width: 120,
-      height: 120,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: AppRadius.radiusXl,
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.35),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+    Widget avatarContent;
+    if (hasPhoto) {
+      avatarContent = Image.file(
+        File(photoPath!),
+        width: avatarSize,
+        height: avatarSize,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _Initials(
+          initials: initials,
+          color: color,
+          size: avatarSize,
+        ),
+      );
+    } else {
+      avatarContent = _Initials(
+        initials: initials,
+        color: color,
+        size: avatarSize,
+      );
+    }
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.center,
+      child: SizedBox(
+        width: avatarSize + badgeSize / 2,
+        height: avatarSize + badgeSize / 2,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Avatar
+            GestureDetector(
+              onTap: showOverlay ? null : onTap,
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                width: avatarSize,
+                height: avatarSize,
+                decoration: BoxDecoration(
+                  color: hasPhoto ? null : color,
+                  borderRadius: hasPhoto
+                      ? AppRadius.radiusXxl
+                      : AppRadius.radiusXl,
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.35),
+                      blurRadius: hasPhoto ? 28 : 24,
+                      offset: Offset(0, hasPhoto ? 10 : 8),
+                    ),
+                  ],
                 ),
-              ],
+                clipBehavior: Clip.antiAlias,
+                child: avatarContent,
+              ),
             ),
-            child: Center(
-              child: Text(
-                initials,
-                style: AppTextStyles.headlineLarge.copyWith(
-                  color: colorScheme.onPrimary,
-                  fontWeight: FontWeight.w800,
+
+            // Loading / uploading overlay
+            if (showOverlay)
+              Container(
+                width: avatarSize,
+                height: avatarSize,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: hasPhoto
+                      ? AppRadius.radiusXxl
+                      : AppRadius.radiusXl,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: Colors.white.withValues(alpha: 0.95),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Uploading…',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Camera badge
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: showOverlay ? null : onTap,
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  width: badgeSize,
+                  height: badgeSize,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: colorScheme.surface,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: isUploading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: colorScheme.onSurface,
+                            ),
+                          )
+                        : Icon(
+                            hasPhoto
+                                ? Icons.edit_outlined
+                                : Icons.camera_alt,
+                            size: hasPhoto ? 20 : 18,
+                            color: colorScheme.onSurface,
+                          ),
+                  ),
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Initials displayed when no profile photo has been picked.
+class _Initials extends StatelessWidget {
+  const _Initials({
+    required this.initials,
+    required this.color,
+    required this.size,
+  });
+
+  final String initials;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      color: color,
+      child: Center(
+        child: Text(
+          initials,
+          style: AppTextStyles.headlineLarge.copyWith(
+            color: Theme.of(context).colorScheme.onPrimary,
+            fontWeight: FontWeight.w800,
+            fontSize: size >= 130 ? 40 : 32,
           ),
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: colorScheme.surface,
-                  width: 2,
-                ),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.camera_alt,
-                  size: 18,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
