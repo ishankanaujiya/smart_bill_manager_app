@@ -158,7 +158,6 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen>
                         ambientController: _ambientController,
                         colorScheme: colorScheme,
                         isDark: isDark,
-                        onCreateBill: _openCreateBill,
                       ),
                     )
                   : _buildBillsList(bills, colorScheme, isDark),
@@ -1378,14 +1377,12 @@ class _BillsEmptyState extends StatelessWidget {
     required this.ambientController,
     required this.colorScheme,
     required this.isDark,
-    required this.onCreateBill,
   });
 
   final AnimationController entranceController;
   final AnimationController ambientController;
   final ColorScheme colorScheme;
   final bool isDark;
-  final VoidCallback onCreateBill;
 
   @override
   Widget build(BuildContext context) {
@@ -1423,31 +1420,11 @@ class _BillsEmptyState extends StatelessWidget {
             interval: const Interval(0.35, 0.68, curve: Curves.easeOutCubic),
             slideOffset: 20,
             child: Text(
-              'This group doesn\'t have any bills.\nCreate the first one to start splitting.',
+              'This group doesn\'t have any bills yet.\nUse the button above to create the first one.',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium.copyWith(
                 color: colorScheme.onSurfaceVariant,
                 height: 1.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xxl),
-          StaggeredEntrance(
-            animation: entranceController,
-            interval: const Interval(0.45, 0.75, curve: Curves.easeOutBack),
-            slideOffset: 20,
-            child: FilledButton.icon(
-              onPressed: onCreateBill,
-              icon: const Icon(Icons.add_rounded, size: 20),
-              label: const Text('Create Bill'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xxl,
-                  vertical: AppSpacing.md,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: AppRadius.radiusFull,
-                ),
               ),
             ),
           ),

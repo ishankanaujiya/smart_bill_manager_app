@@ -356,3 +356,146 @@ final paymentActionProvider =
     StateNotifierProvider<PaymentActionNotifier, PaymentActionState>((ref) {
   return PaymentActionNotifier(ref.read(billRepositoryProvider));
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User balance — "You Owe" & "You're Owed" aggregated across all groups
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Aggregated financial summary for the current user across all their groups.
+///
+/// [youOwe] is the total outstanding amount the current user still owes
+/// across all bills (in any group) where they are an included participant
+/// whose payment has not been verified as fully paid.
+///
+/// [youAreOwed] is the total outstanding amount that other participants
+/// owe the current user across all bills the current user created — i.e.
+/// the sum of other participants' unpaid shares.
+///
+/// [youOweGroupCount] / [youAreOwedGroupCount] track how many distinct
+/// groups contribute to each total, for the "Across N groups" sub-label.
+class UserBalance {
+  const UserBalance({
+    this.youOwe = 0.0,
+    this.youAreOwed = 0.0,
+    this.youOweGroupCount = 0,
+    this.youAreOwedGroupCount = 0,
+  });
+
+  const UserBalance.zero()
+      : youOwe = 0.0,
+        youAreOwed = 0.0,
+        youOweGroupCount = 0,
+        youAreOwedGroupCount = 0;
+
+  final double youOwe;
+  final double youAreOwed;
+  final int youOweGroupCount;
+  final int youAreOwedGroupCount;
+
+  UserBalance copyWith({
+    double? youOwe,
+    double? youAreOwed,
+    int? youOweGroupCount,
+    int? youAreOwedGroupCount,
+  }) {
+    return UserBalance(
+      youOwe: youOwe ?? this.youOwe,
+      youAreOwed: youAreOwed ?? this.youAreOwed,
+      youOweGroupCount: youOweGroupCount ?? this.youOweGroupCount,
+      youAreOwedGroupCount: youAreOwedGroupCount ?? this.youAreOwedGroupCount,
+    );
+  }
+}
+
+/// Computes the current user's aggregated "You Owe" and "You're Owed"
+/// balances across all groups they belong to.
+///
+/// This provider watches:
+/// 1. [groupsForCurrentUserProvider] — the list of groups the user is in.
+/// 2. [billsForGroupProvider] for each group — the real-time bill stream.
+///
+/// Whenever any bill changes (e.g. a payment is verified), this provider
+/// recomputes the balances.
+///
+/// **You Owe** = sum of `(share − amountPaid)` for every bill where the
+/// current user is an included participant whose payment status is not
+/// `paid`. This covers `unpaid`, `rejected`, `requested`, and
+/// `partiallyPaid` — in each case the user still owes the remaining
+/// share.
+///
+/// **You're Owed** = sum of `amountPaid` for every included participant
+/// (excluding the creator) in bills created by the current user, where
+/// that participant's payment has been verified (`paid` or
+/// `partiallyPaid`). This is the total amount others have paid to the
+/// user and the creator has confirmed receiving.
+final userBalanceProvider = Provider<AsyncValue<UserBalance>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) {
+    return const AsyncValue.data(UserBalance.zero());
+  }
+
+  final groupsAsync = ref.watch(groupsForCurrentUserProvider);
+
+  return groupsAsync.when(
+    data: (groups) {
+      double youOwe = 0.0;
+      double youAreOwed = 0.0;
+      final youOweGroups = <String>{};
+      final youAreOwedGroups = <String>{};
+
+      // Watch the real-time bills stream for every group. Riverpod
+      // rebuilds this provider whenever any of the watched family
+      // providers emit new data.
+      for (final group in groups) {
+        final billsAsync = ref.watch(billsForGroupProvider(group.id));
+        billsAsync.whenData((bills) {
+          for (final bill in bills) {
+            // ── You Owe ──────────────────────────────────────────────
+            // The current user's outstanding share in any bill where
+            // they are included and not fully paid.
+            final userPayment = bill.paymentFor(uid);
+            if (userPayment.status != ParticipantPaymentStatus.paid) {
+              final share = bill.shareFor(uid);
+              final remaining = share - userPayment.amountPaid;
+              if (remaining > 0.001) {
+                youOwe += remaining;
+                youOweGroups.add(group.id);
+              }
+            }
+
+            // ── You're Owed ──────────────────────────────────────────
+            // The total verified amount that other participants have
+            // paid to the current user in bills the current user
+            // created. Only counts participants whose payment the
+            // creator has verified as `paid` or `partiallyPaid` —
+            // `requested` (pending verification) and `unpaid` do not
+            // count, since the creator hasn't confirmed receipt yet.
+            if (bill.createdBy == uid) {
+              for (final p in bill.includedParticipants) {
+                if (p.id == uid) continue;
+                final pPayment = bill.paymentFor(p.id);
+                if (pPayment.status == ParticipantPaymentStatus.paid ||
+                    pPayment.status ==
+                        ParticipantPaymentStatus.partiallyPaid) {
+                  if (pPayment.amountPaid > 0.001) {
+                    youAreOwed += pPayment.amountPaid;
+                    youAreOwedGroups.add(group.id);
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      return AsyncValue.data(UserBalance(
+        youOwe: youOwe,
+        youAreOwed: youAreOwed,
+        youOweGroupCount: youOweGroups.length,
+        youAreOwedGroupCount: youAreOwedGroups.length,
+      ));
+    },
+    loading: () => const AsyncValue.loading(),
+    error: (e, st) => AsyncValue.error(e, st),
+  );
+});

@@ -1,10 +1,8 @@
-import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
 import '../../app/theme/design_system.dart';
-import '../../features/activity/presentation/view/activity_screen.dart';
 import '../../features/dashboard/presentation/view/home_screen.dart';
 import '../../features/groups/presentation/view/create_group_screen.dart';
 import '../../features/groups/presentation/view/groups_screen.dart';
@@ -25,7 +23,6 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
   int _currentIndex = 0;
 
   late final AnimationController _entranceController;
-  late final AnimationController _addPulseController;
   late final Animation<double> _barSlide;
   late final Animation<double> _barFade;
 
@@ -35,7 +32,6 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
     HomeScreen(),
     GroupsScreen(),
     SizedBox.shrink(),
-    ActivityScreen(),
     ProfileScreen(),
   ];
 
@@ -60,18 +56,12 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
       curve: const Interval(0.2, 0.8, curve: Curves.easeOut),
     );
 
-    _addPulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    )..repeat();
-
     _entranceController.forward();
   }
 
   @override
   void dispose() {
     _entranceController.dispose();
-    _addPulseController.dispose();
     super.dispose();
   }
 
@@ -104,12 +94,10 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
       bottomNavigationBar: _BottomNavBar(
         currentIndex: _currentIndex,
         onTap: _onTabSelected,
-        onCreateGroup: _openCreateGroup,
         isDark: isDark,
         colorScheme: colorScheme,
         slideAnimation: _barSlide,
         fadeAnimation: _barFade,
-        addPulseAnimation: _addPulseController,
       ),
     );
   }
@@ -119,22 +107,18 @@ class _BottomNavBar extends StatelessWidget {
   const _BottomNavBar({
     required this.currentIndex,
     required this.onTap,
-    required this.onCreateGroup,
     required this.isDark,
     required this.colorScheme,
     required this.slideAnimation,
     required this.fadeAnimation,
-    required this.addPulseAnimation,
   });
 
   final int currentIndex;
   final ValueChanged<int> onTap;
-  final VoidCallback onCreateGroup;
   final bool isDark;
   final ColorScheme colorScheme;
   final Animation<double> slideAnimation;
   final Animation<double> fadeAnimation;
-  final Animation<double> addPulseAnimation;
 
   @override
   Widget build(BuildContext context) {
@@ -203,29 +187,22 @@ class _BottomNavBar extends StatelessWidget {
                       colorScheme: colorScheme,
                       isDark: isDark,
                     ),
-                    _AddNavItem(
-                      isSelected: currentIndex == 2,
-                      onTap: onCreateGroup,
-                      colorScheme: colorScheme,
-                      pulseAnimation: addPulseAnimation,
-                    ),
                     _NavItem(
-                      index: 3,
+                      index: 2,
                       currentIndex: currentIndex,
-                      icon: Icons.trending_up_outlined,
-                      activeIcon: Icons.trending_up_rounded,
-                      hasNotification: true,
-                      onTap: () => onTap(3),
+                      icon: Icons.add_to_photos_rounded,
+                      activeIcon: Icons.group_add_rounded,
+                      onTap: () => onTap(2),
                       colorScheme: colorScheme,
                       isDark: isDark,
                     ),
                     _NavItem(
-                      index: 4,
+                      index: 3,
                       currentIndex: currentIndex,
                       icon: Icons.person_outline,
                       activeIcon: Icons.person_rounded,
                       hasNotification: true,
-                      onTap: () => onTap(4),
+                      onTap: () => onTap(3),
                       colorScheme: colorScheme,
                       isDark: isDark,
                     ),
@@ -338,100 +315,6 @@ class _NavIconWithDot extends StatelessWidget {
             child: _NotificationDot(animate: !isSelected),
           ),
       ],
-    );
-  }
-}
-
-class _AddNavItem extends StatefulWidget {
-  const _AddNavItem({
-    required this.isSelected,
-    required this.onTap,
-    required this.colorScheme,
-    required this.pulseAnimation,
-  });
-
-  final bool isSelected;
-  final VoidCallback onTap;
-  final ColorScheme colorScheme;
-  final Animation<double> pulseAnimation;
-
-  @override
-  State<_AddNavItem> createState() => _AddNavItemState();
-}
-
-class _AddNavItemState extends State<_AddNavItem>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _tapController;
-  late final Animation<double> _tapScale;
-
-  @override
-  void initState() {
-    super.initState();
-    _tapController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 180),
-    );
-    _tapScale = Tween<double>(begin: 1.0, end: 0.86).animate(
-      CurvedAnimation(parent: _tapController, curve: Curves.easeOutCubic),
-    );
-  }
-
-  @override
-  void dispose() {
-    _tapController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _onTap() async {
-    await _tapController.forward();
-    await _tapController.reverse();
-    widget.onTap();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = widget.colorScheme.primary;
-
-    return GestureDetector(
-      onTap: _onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedBuilder(
-        animation: widget.pulseAnimation,
-        builder: (context, child) {
-          final pulse =
-              (1 - math.cos(math.pi * 2 * widget.pulseAnimation.value)) * 0.5;
-
-          return Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: primary,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: primary.withValues(alpha: 0.25 + 0.25 * pulse),
-                  blurRadius: 14 + 10 * pulse,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: AnimatedBuilder(
-              animation: _tapScale,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _tapScale.value,
-                  child: child,
-                );
-              },
-              child: Icon(
-                Icons.add_rounded,
-                size: 28,
-                color: widget.colorScheme.onPrimary,
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
 }

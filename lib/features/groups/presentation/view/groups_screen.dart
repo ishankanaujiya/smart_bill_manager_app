@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
+import '../../../expenses/presentation/state/bill_providers.dart';
 import '../../domain/entities/group.dart';
 import '../state/group_providers.dart';
 import 'create_group_screen.dart';
@@ -147,11 +148,27 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
               interval: const Interval(0.1, 0.45, curve: Curves.easeOutCubic),
               slideOffset: 24,
               child: groupsAsync.when(
-                data: (groups) => _StatsRow(
-                  groups: groups,
-                  colorScheme: colorScheme,
-                  isDark: isDark,
-                ),
+                data: (groups) {
+                  final balanceAsync = ref.watch(userBalanceProvider);
+                  return balanceAsync.when(
+                    data: (balance) => _StatsRow(
+                      groupCount: groups.length,
+                      balance: balance,
+                      colorScheme: colorScheme,
+                      isDark: isDark,
+                    ),
+                    loading: () => _StatsRowSkeleton(
+                      colorScheme: colorScheme,
+                      isDark: isDark,
+                    ),
+                    error: (_, __) => _StatsRow(
+                      groupCount: groups.length,
+                      balance: const UserBalance.zero(),
+                      colorScheme: colorScheme,
+                      isDark: isDark,
+                    ),
+                  );
+                },
                 loading: () => _StatsRowSkeleton(
                   colorScheme: colorScheme,
                   isDark: isDark,
@@ -468,12 +485,14 @@ class _IconButton extends StatelessWidget {
 
 class _StatsRow extends StatelessWidget {
   const _StatsRow({
-    required this.groups,
+    required this.groupCount,
+    required this.balance,
     required this.colorScheme,
     required this.isDark,
   });
 
-  final List<Group> groups;
+  final int groupCount;
+  final UserBalance balance;
   final ColorScheme colorScheme;
   final bool isDark;
 
@@ -507,7 +526,7 @@ class _StatsRow extends StatelessWidget {
                 iconBg: colorScheme.primaryContainer,
                 iconColor: colorScheme.primary,
                 label: 'Total Groups',
-                value: groups.length.toString(),
+                value: groupCount.toString(),
                 subLabel: 'Groups',
                 valueColor: colorScheme.onSurface,
                 colorScheme: colorScheme,
@@ -520,8 +539,12 @@ class _StatsRow extends StatelessWidget {
                 iconBg: AppColors.chartOrange.withValues(alpha: 0.12),
                 iconColor: AppColors.chartOrange,
                 label: 'You Owe',
-                value: 'Rs. 0',
-                subLabel: 'Across 0 groups',
+                value: AppConstants.formatCurrency(
+                  balance.youOwe,
+                  withSymbol: true,
+                ),
+                subLabel:
+                    'Across ${balance.youOweGroupCount} group${balance.youOweGroupCount == 1 ? '' : 's'}',
                 valueColor: AppColors.chartOrange,
                 colorScheme: colorScheme,
               ),
@@ -533,8 +556,12 @@ class _StatsRow extends StatelessWidget {
                 iconBg: colorScheme.primaryContainer,
                 iconColor: colorScheme.primary,
                 label: "You're Owed",
-                value: 'Rs. 0',
-                subLabel: 'Across 0 groups',
+                value: AppConstants.formatCurrency(
+                  balance.youAreOwed,
+                  withSymbol: true,
+                ),
+                subLabel:
+                    'Across ${balance.youAreOwedGroupCount} group${balance.youAreOwedGroupCount == 1 ? '' : 's'}',
                 valueColor: colorScheme.primary,
                 colorScheme: colorScheme,
               ),

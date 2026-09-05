@@ -603,6 +603,7 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
 
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -974,7 +975,12 @@ class _PaymentProgressBarState extends State<_PaymentProgressBar>
   @override
   void initState() {
     super.initState();
-    // Drives the fill width (0 → target).
+    // Drives the fill animation from 0 → 1. The actual fill width is
+    // computed as `_fill.value * _progress`, so the eased curve never
+    // distorts the final target value. (Animating directly to
+    // `_progress` through a CurvedAnimation would apply the easing
+    // curve to the target — e.g. easeOutCubic(0.5) ≈ 0.9, making a
+    // 50% bar look ~90% full.)
     _fillController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1100),
@@ -993,9 +999,11 @@ class _PaymentProgressBarState extends State<_PaymentProgressBar>
       duration: const Duration(milliseconds: 1800),
     )..repeat();
 
-    // Animate to the initial target after the first frame.
+    // Animate from 0 → 1 after the first frame. The width factor is
+    // `_fill.value * _progress`, so the bar eases up to the correct
+    // target width.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fillController.animateTo(_progress);
+      if (mounted) _fillController.animateTo(1.0);
     });
   }
 
@@ -1014,7 +1022,11 @@ class _PaymentProgressBarState extends State<_PaymentProgressBar>
         ? 0.0
         : (oldPaid / oldTotal).clamp(0.0, 1.0);
     if ((oldProgress - _progress).abs() > 0.001) {
-      _fillController.animateTo(_progress);
+      // Reset to 0 and re-animate to 1 so the new target is reached
+      // with the easing curve applied correctly.
+      _fillController
+        ..value = 0.0
+        ..animateTo(1.0);
     }
   }
 
@@ -1100,11 +1112,14 @@ class _PaymentProgressBarState extends State<_PaymentProgressBar>
                           dimmed: true,
                         ),
                       ),
-                    // Real fill (animated width). Hidden at 0%.
+                    // Real fill (animated width). The width factor is
+                    // the eased animation value (0 → 1) multiplied by the
+                    // actual progress, so the bar fills to exactly the
+                    // right percentage with a smooth easing curve.
                     if (!isZero)
                       FractionallySizedBox(
                         alignment: Alignment.centerLeft,
-                        widthFactor: _fill.value,
+                        widthFactor: _fill.value * _progress,
                         child: _ProgressFill(
                           onPrimary: onPrimary,
                           allPaid: allPaid,
@@ -2384,17 +2399,19 @@ class _PaymentActionSheet extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.md,
-          AppSpacing.xl,
-          AppSpacing.xl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      minimum: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.md,
+            AppSpacing.xl,
+            AppSpacing.xl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             // Drag handle.
             Center(
               child: Container(
@@ -2541,6 +2558,7 @@ class _PaymentActionSheet extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }
