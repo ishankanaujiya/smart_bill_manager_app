@@ -16,9 +16,10 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Global notifier for the app [ThemeMode].
 ///
-/// Using a [ValueNotifier] lets the theme mode be switched from anywhere in the
-/// app (e.g. settings) without prop-drilling or an extra dependency.
-final ValueNotifier<ThemeMode> _themeModeNotifier =
+/// Using a [ValueNotifier] lets the theme mode be switched from anywhere in
+/// the app (e.g. the Appearance settings screen) without prop-drilling or an
+/// extra dependency.
+final ValueNotifier<ThemeMode> themeModeNotifier =
     ValueNotifier<ThemeMode>(ThemeMode.system);
 
 Future<void> main() async {
@@ -66,7 +67,7 @@ class SmartBillManagerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
-      valueListenable: _themeModeNotifier,
+      valueListenable: themeModeNotifier,
       builder: (context, mode, _) {
         return MaterialApp(
           title: 'Smart Bill Manager',
