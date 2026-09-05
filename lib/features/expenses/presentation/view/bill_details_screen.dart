@@ -307,6 +307,13 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
                         ),
                       ),
                     ],
+                    // Payment progress bar — reflects how many included
+                    // participants have been verified as fully paid.
+                    const SizedBox(height: AppSpacing.lg),
+                    _PaymentProgressBar(
+                      bill: bill,
+                      onPrimary: colorScheme.onPrimary,
+                    ),
                   ],
                 ),
               ),
@@ -903,6 +910,307 @@ class _SkeletonBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(6),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Payment progress bar (inside the gradient summary card)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A highly-animated progress bar shown inside the gradient bill summary
+/// card. It reflects the share of included participants whose payment has
+/// been verified as fully paid.
+///
+/// Visual behavior by state:
+/// - **0%**: the track is always visible with a shimmering placeholder
+///   sweep and a gentle pulse, so the user knows a progress bar exists
+///   even before anyone has paid.
+/// - **1%–99%**: the fill animates from its previous value to the new
+///   target (easeOutCubic), with a continuous shimmer sweep travelling
+///   across the filled portion and a soft leading-edge glow.
+/// - **100%**: the fill brightens to full opacity, gains a celebratory
+///   glow, and the label switches to "All paid" with a check icon.
+///
+/// The track and fill are tinted with `onPrimary` so they sit naturally on
+/// the gradient. A label row above the bar shows "X of Y paid" on the left
+/// and the percentage on the right.
+class _PaymentProgressBar extends StatefulWidget {
+  const _PaymentProgressBar({
+    required this.bill,
+    required this.onPrimary,
+  });
+
+  final Bill bill;
+  final Color onPrimary;
+
+  @override
+  State<_PaymentProgressBar> createState() => _PaymentProgressBarState();
+}
+
+class _PaymentProgressBarState extends State<_PaymentProgressBar>
+    with TickerProviderStateMixin {
+  late final AnimationController _fillController;
+  late final AnimationController _shimmerController;
+  late Animation<double> _fill;
+
+  int get _paidCount {
+    final included = widget.bill.includedParticipants;
+    return included
+        .where((p) =>
+            widget.bill.paymentFor(p.id).status ==
+            ParticipantPaymentStatus.paid)
+        .length;
+  }
+
+  int get _totalCount => widget.bill.includedCount;
+
+  double get _progress {
+    if (_totalCount == 0) return 0.0;
+    return (_paidCount / _totalCount).clamp(0.0, 1.0);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Drives the fill width (0 → target).
+    _fillController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+      value: 0.0,
+    );
+    _fill = CurvedAnimation(
+      parent: _fillController,
+      curve: Curves.easeOutCubic,
+    )..addListener(() {
+        if (mounted) setState(() {});
+      });
+
+    // Drives the shimmer sweep across the fill (loops forever).
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+
+    // Animate to the initial target after the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fillController.animateTo(_progress);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _PaymentProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-animate whenever the target progress changes (e.g. a
+    // verification lands via the real-time bill stream).
+    final oldTotal = oldWidget.bill.includedCount;
+    final oldPaid = oldWidget.bill.includedParticipants
+        .where((p) =>
+            oldWidget.bill.paymentFor(p.id).status ==
+            ParticipantPaymentStatus.paid)
+        .length;
+    final oldProgress = oldTotal == 0
+        ? 0.0
+        : (oldPaid / oldTotal).clamp(0.0, 1.0);
+    if ((oldProgress - _progress).abs() > 0.001) {
+      _fillController.animateTo(_progress);
+    }
+  }
+
+  @override
+  void dispose() {
+    _fillController.dispose();
+    _shimmerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onPrimary = widget.onPrimary;
+    final paid = _paidCount;
+    final total = _totalCount;
+    final progress = _progress;
+    final percent = (progress * 100).round();
+    final allPaid = paid > 0 && paid == total;
+    final isZero = progress <= 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Label row: "X of Y paid" + percentage.
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  allPaid
+                      ? Icons.check_circle_rounded
+                      : Icons.groups_2_rounded,
+                  size: 13,
+                  color: onPrimary.withValues(alpha: 0.85),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  allPaid ? 'All paid' : '$paid of $total paid',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: onPrimary.withValues(alpha: 0.85),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              '$percent%',
+              style: AppTextStyles.labelSmall.copyWith(
+                color: onPrimary.withValues(alpha: 0.95),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        // Track + animated fill.
+        AnimatedBuilder(
+          animation: _shimmerController,
+          builder: (context, _) {
+            return Container(
+              height: 10,
+              decoration: BoxDecoration(
+                color: onPrimary.withValues(alpha: 0.16),
+                borderRadius: AppRadius.radiusFull,
+              ),
+              child: ClipRRect(
+                borderRadius: AppRadius.radiusFull,
+                child: Stack(
+                  children: [
+                    // At 0%, render a full-width (100%) low-opacity fill
+                    // so the bar is clearly visible as a complete shape —
+                    // just dimmed to communicate "no progress yet". A
+                    // shimmer sweep travels across it to keep it feeling
+                    // alive. Once progress > 0%, this is hidden and the
+                    // real animated fill takes over.
+                    if (isZero)
+                      Positioned.fill(
+                        child: _ProgressFill(
+                          onPrimary: onPrimary,
+                          allPaid: false,
+                          shimmerValue: _shimmerController.value,
+                          dimmed: true,
+                        ),
+                      ),
+                    // Real fill (animated width). Hidden at 0%.
+                    if (!isZero)
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: _fill.value,
+                        child: _ProgressFill(
+                          onPrimary: onPrimary,
+                          allPaid: allPaid,
+                          shimmerValue: _shimmerController.value,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// The filled portion of the progress bar.
+///
+/// Renders a rounded fill with a continuous shimmer sweep travelling left
+/// → right across it, plus a soft glow at the leading edge. When [allPaid]
+/// is true, the fill brightens and gains a celebratory glow.
+///
+/// When [dimmed] is true (used at 0% progress), the fill renders at full
+/// width with a low opacity so the bar is clearly visible as a complete
+/// shape — just dimmed to communicate "no progress yet" — while still
+/// carrying the shimmer sweep so it feels alive.
+class _ProgressFill extends StatelessWidget {
+  const _ProgressFill({
+    required this.onPrimary,
+    required this.allPaid,
+    required this.shimmerValue,
+    this.dimmed = false,
+  });
+
+  final Color onPrimary;
+  final bool allPaid;
+  final double shimmerValue;
+  final bool dimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    // Shimmer sweep position (0 → 1, wraps around).
+    final sweep = (shimmerValue * 2.0) % 1.0;
+
+    // Base fill alpha: full when complete, strong when in progress, low
+    // when dimmed (0% placeholder).
+    final fillAlpha = dimmed
+        ? 0.35
+        : allPaid
+            ? 1.0
+            : 0.9;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: AppRadius.radiusFull,
+        boxShadow: dimmed
+            ? null
+            : allPaid
+                ? [
+                    BoxShadow(
+                      color: onPrimary.withValues(alpha: 0.55),
+                      blurRadius: 10,
+                      spreadRadius: 0.5,
+                    ),
+                  ]
+                : [
+                    // Soft glow at the leading edge of the fill.
+                    BoxShadow(
+                      color: onPrimary.withValues(alpha: 0.35),
+                      blurRadius: 6,
+                      spreadRadius: 0.5,
+                    ),
+                  ],
+      ),
+      child: Stack(
+        children: [
+          // Base fill.
+          Container(
+            decoration: BoxDecoration(
+              color: onPrimary.withValues(alpha: fillAlpha),
+              borderRadius: AppRadius.radiusFull,
+            ),
+          ),
+          // Shimmer sweep overlay.
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: AppRadius.radiusFull,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment(sweep * 2 - 1, 0),
+                    end: Alignment(sweep * 2 - 0.4, 0),
+                    colors: [
+                      Colors.transparent,
+                      Colors.white.withValues(
+                          alpha: dimmed ? 0.20 : 0.35),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
