@@ -51,6 +51,15 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   _GroupFilter _activeFilter = _GroupFilter.all;
   _GroupSort _activeSort = _GroupSort.recent;
 
+  /// Whether the search field is currently shown.
+  bool _isSearching = false;
+
+  /// The current search query (lower-cased for case-insensitive matching).
+  String _searchQuery = '';
+
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +89,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     _entranceController.dispose();
     _ambientController.dispose();
     _patternController.dispose();
+    _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -89,18 +100,40 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     );
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _searchController.clear();
+        _searchQuery = '';
+        _searchFocus.unfocus();
+      } else {
+        // Focus the field after it appears.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _searchFocus.requestFocus();
+        });
+      }
+    });
+  }
+
   List<Group> _applyFilterAndSort(List<Group> groups) {
-    // No financial data on the Group entity yet → filter on member count as
-    // a stand-in so the chips are functional (owes / owed shown via balance).
-    var filtered = groups;
+    // Apply search query first (case-insensitive, prefix match on group
+    // name). Only groups whose name starts with the typed text are shown.
+    var filtered = _searchQuery.isEmpty
+        ? groups
+        : groups
+            .where((g) => g.groupName.toLowerCase().startsWith(_searchQuery))
+            .toList();
+
+    // Then apply the active filter chip.
     switch (_activeFilter) {
       case _GroupFilter.all:
-        filtered = groups;
+        break;
       case _GroupFilter.owesYou:
         // Show groups with more than 1 member (placeholder logic)
-        filtered = groups.where((g) => g.memberCount > 1).toList();
+        filtered = filtered.where((g) => g.memberCount > 1).toList();
       case _GroupFilter.youOwe:
-        filtered = groups.where((g) => g.memberCount == 1).toList();
+        filtered = filtered.where((g) => g.memberCount == 1).toList();
     }
 
     final sorted = [...filtered];
@@ -137,6 +170,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
               child: _AppBar(
                 colorScheme: colorScheme,
                 isDark: isDark,
+                isSearching: _isSearching,
+                searchController: _searchController,
+                searchFocus: _searchFocus,
+                onSearchToggle: _toggleSearch,
+                onSearchChanged: (value) =>
+                    setState(() => _searchQuery = value.toLowerCase()),
               ),
             ),
           ),
@@ -212,7 +251,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
               if (filtered.isEmpty) {
                 return SliverFillRemaining(
                   hasScrollBody: false,
-                  child: _NoResultsState(colorScheme: colorScheme),
+                  child: _NoResultsState(
+                    colorScheme: colorScheme,
+                    isSearching: _searchQuery.isNotEmpty,
+                  ),
                 );
               }
               return _buildGrid(filtered, colorScheme, isDark);
@@ -346,10 +388,23 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _AppBar extends StatelessWidget {
-  const _AppBar({required this.colorScheme, required this.isDark});
+  const _AppBar({
+    required this.colorScheme,
+    required this.isDark,
+    required this.isSearching,
+    required this.searchController,
+    required this.searchFocus,
+    required this.onSearchToggle,
+    required this.onSearchChanged,
+  });
 
   final ColorScheme colorScheme;
   final bool isDark;
+  final bool isSearching;
+  final TextEditingController searchController;
+  final FocusNode searchFocus;
+  final VoidCallback onSearchToggle;
+  final ValueChanged<String> onSearchChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -360,86 +415,160 @@ class _AppBar extends StatelessWidget {
         AppSpacing.screenHorizontal,
         AppSpacing.sm,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Icon badge
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: colorScheme.primary,
-              borderRadius: AppRadius.radiusMd,
-              boxShadow: isDark
-                  ? AppShadows.primaryGlowDark
-                  : AppShadows.primaryGlowLight,
-            ),
-            child: Icon(
-              Icons.groups_2_rounded,
-              color: colorScheme.onPrimary,
-              size: 26,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'My Groups',
-                  style: AppTextStyles.titleLarge.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                Text(
-                  'Manage, track & settle group expenses',
-                  style: AppTextStyles.caption.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Search icon
-          _IconButton(
-            icon: Icons.search_rounded,
-            colorScheme: colorScheme,
-            isDark: isDark,
-            onTap: () {},
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          // Bell icon with badge
-          Stack(
-            clipBehavior: Clip.none,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              // Icon badge
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  borderRadius: AppRadius.radiusMd,
+                  boxShadow: isDark
+                      ? AppShadows.primaryGlowDark
+                      : AppShadows.primaryGlowLight,
+                ),
+                child: Icon(
+                  Icons.groups_2_rounded,
+                  color: colorScheme.onPrimary,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'My Groups',
+                      style: AppTextStyles.titleLarge.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    Text(
+                      'Manage, track & settle group expenses',
+                      style: AppTextStyles.caption.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Search / close icon.
               _IconButton(
-                icon: Icons.notifications_outlined,
+                icon: isSearching
+                    ? Icons.close_rounded
+                    : Icons.search_rounded,
                 colorScheme: colorScheme,
                 isDark: isDark,
-                onTap: () {},
-              ),
-              Positioned(
-                right: 6,
-                top: 6,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: colorScheme.error,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: colorScheme.surface,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
+                onTap: onSearchToggle,
               ),
             ],
           ),
+          // Animated search field.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: isSearching
+                ? Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.md),
+                    child: _SearchField(
+                      controller: searchController,
+                      focusNode: searchFocus,
+                      colorScheme: colorScheme,
+                      onChanged: onSearchChanged,
+                      onClose: onSearchToggle,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// The search text field shown when the search icon is tapped.
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.focusNode,
+    required this.colorScheme,
+    required this.onChanged,
+    required this.onClose,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ColorScheme colorScheme;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      onChanged: onChanged,
+      textInputAction: TextInputAction.search,
+      style: AppTextStyles.bodyMedium.copyWith(
+        color: colorScheme.onSurface,
+      ),
+      decoration: InputDecoration(
+        hintText: 'Search groups by name...',
+        hintStyle: AppTextStyles.bodyMedium.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        prefixIcon: Icon(
+          Icons.search_rounded,
+          size: 20,
+          color: colorScheme.onSurfaceVariant,
+        ),
+        suffixIcon: controller.text.isNotEmpty
+            ? IconButton(
+                icon: Icon(
+                  Icons.clear_rounded,
+                  size: 20,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                onPressed: () {
+                  controller.clear();
+                  onChanged('');
+                },
+                splashRadius: 16,
+              )
+            : null,
+        filled: true,
+        fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: AppRadius.radiusFull,
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: AppRadius.radiusFull,
+          borderSide: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: AppRadius.radiusFull,
+          borderSide: BorderSide(
+            color: colorScheme.primary,
+            width: 1.5,
+          ),
+        ),
       ),
     );
   }
@@ -973,14 +1102,6 @@ class _GroupCardState extends State<_GroupCard>
     final colorScheme = Theme.of(context).colorScheme;
     final group = widget.group;
 
-    // Dummy balance data until financial layer is wired.
-    // Odd-indexed groups show "You owe", even show "You're owed".
-    final dummyIndex = group.groupName.codeUnits.fold(0, (a, b) => a + b);
-    final isOwed = dummyIndex % 2 == 0;
-    final balanceColor =
-        isOwed ? colorScheme.primary : AppColors.chartOrange;
-    final balanceLabel = isOwed ? "You're owed" : 'You owe';
-
     return GestureDetector(
       onTapDown: (_) => _pressController.forward(),
       onTapUp: (_) {
@@ -1051,24 +1172,13 @@ class _GroupCardState extends State<_GroupCard>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Group name
+                      // Group name (title)
                       Text(
                         group.groupName,
                         style: AppTextStyles.titleSmall.copyWith(
                           color: colorScheme.onSurface,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      // Description placeholder
-                      Text(
-                        _groupSubtitle(group),
-                        style: AppTextStyles.caption.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontSize: 10,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1080,46 +1190,32 @@ class _GroupCardState extends State<_GroupCard>
                         color: colorScheme.primary,
                         onPrimary: colorScheme.onPrimary,
                       ),
-                      const Spacer(),
-                      // Balance label
-                      Text(
-                        balanceLabel,
-                        style: AppTextStyles.caption.copyWith(
-                          color: balanceColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      // Balance value + arrow
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Rs. 0.00',
-                              style: AppTextStyles.titleSmall.copyWith(
-                                color: balanceColor,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 26,
-                            height: 26,
-                            decoration: BoxDecoration(
-                              color: colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.7),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: AppSpacing.sm),
+                      // Member avatars (max 2) + remaining count
+                      _MemberAvatarRow(
+                        members: group.members,
+                        colorScheme: colorScheme,
                       ),
                     ],
+                  ),
+                ),
+                // ── Bottom-right arrow ──────────────────────────────────────
+                Positioned(
+                  right: AppSpacing.md,
+                  bottom: AppSpacing.md,
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.7),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -1128,25 +1224,6 @@ class _GroupCardState extends State<_GroupCard>
         ),
       ),
     );
-  }
-
-  String _groupSubtitle(Group group) {
-    // Generate a friendly tagline from group name.
-    final name = group.groupName.toLowerCase();
-    if (name.contains('room') || name.contains('home') || name.contains('flat')) {
-      return 'Home sweet home 🏠';
-    } else if (name.contains('office') || name.contains('work') || name.contains('lunch')) {
-      return 'Eat together, stay together 🍽';
-    } else if (name.contains('trip') || name.contains('travel') || name.contains('vacation')) {
-      return 'Memories & adventures 🏕';
-    } else if (name.contains('family')) {
-      return 'Making memories together ✈';
-    } else if (name.contains('friend') || name.contains('college') || name.contains('school')) {
-      return 'Good times & great people 🎉';
-    } else if (name.contains('sport') || name.contains('team') || name.contains('football')) {
-      return 'Play hard, win together ⚽';
-    }
-    return 'Split bills effortlessly 💸';
   }
 }
 
@@ -1182,6 +1259,169 @@ class _MemberBadge extends StatelessWidget {
           color: color,
           fontWeight: FontWeight.w600,
           fontSize: 10,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Member avatar row — shows up to 2 profile pictures + remaining count
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Displays up to two member profile pictures as overlapping circular
+/// avatars, followed by a "+N" pill when there are more than two members.
+///
+/// Members without a profile picture show their initials on a tinted
+/// circle instead.
+class _MemberAvatarRow extends StatelessWidget {
+  const _MemberAvatarRow({
+    required this.members,
+    required this.colorScheme,
+  });
+
+  final List<GroupMember> members;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    if (members.isEmpty) return const SizedBox.shrink();
+
+    final maxAvatars = 2;
+    final shown = members.take(maxAvatars).toList();
+    final remaining = members.length - shown.length;
+
+    return Row(
+      children: [
+        // Overlapping avatars. The width is computed so the Stack
+        // receives bounded constraints (avatar size + overlap offset
+        // for each additional avatar).
+        SizedBox(
+          height: 28,
+          width: 28.0 + (shown.length - 1) * 18.0,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (int i = 0; i < shown.length; i++)
+                Positioned(
+                  left: i * 18.0,
+                  child: _MemberAvatar(
+                    member: shown[i],
+                    index: i,
+                    colorScheme: colorScheme,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // Remaining count pill.
+        if (remaining > 0) ...[
+          const SizedBox(width: AppSpacing.sm),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 2,
+            ),
+            decoration: BoxDecoration(
+              color:
+                  colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+              borderRadius: AppRadius.radiusFull,
+            ),
+            child: Text(
+              '+$remaining',
+              style: AppTextStyles.labelSmall.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A single member avatar — shows the profile picture if available,
+/// otherwise the member's initials on a tinted circle.
+class _MemberAvatar extends StatelessWidget {
+  const _MemberAvatar({
+    required this.member,
+    required this.index,
+    required this.colorScheme,
+  });
+
+  final GroupMember member;
+  final int index;
+  final ColorScheme colorScheme;
+
+  static const _avatarColors = [
+    AppColors.chartBlue,
+    AppColors.chartPurple,
+    AppColors.chartTeal,
+    AppColors.chartOrange,
+    AppColors.chartPink,
+    AppColors.chartGreen,
+  ];
+
+  String _initials() {
+    final name = (member.displayName?.isNotEmpty == true
+            ? member.displayName!
+            : member.fullName)
+        .trim();
+    if (name.isEmpty) return '?';
+    final parts = name.split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name[0].toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = 28.0;
+    final ringColor = colorScheme.surface;
+    final bgColor = _avatarColors[index % _avatarColors.length];
+
+    final avatar = (member.profilePicture != null &&
+            member.profilePicture!.isNotEmpty)
+        ? ClipOval(
+            child: Image.network(
+              member.profilePicture!,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _initialsCircle(size, bgColor),
+            ),
+          )
+        : _initialsCircle(size, bgColor);
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: ringColor, width: 2),
+      ),
+      child: avatar,
+    );
+  }
+
+  Widget _initialsCircle(double size, Color bgColor) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: bgColor,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        _initials(),
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -1690,87 +1930,94 @@ class _PromoCard extends StatelessWidget {
         AppSpacing.screenHorizontal,
         AppSpacing.sm,
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: AppRadius.radiusXl,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onCreateGroup,
           borderRadius: AppRadius.radiusXl,
-          boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Row(
-            children: [
-              // Illustration
-              ClipRRect(
-                borderRadius: AppRadius.radiusMd,
-                child: Image.asset(
-                  'assets/images/group_celebration.png',
-                  width: 72,
-                  height: 72,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: 72,
-                    height: 72,
+          child: Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: AppRadius.radiusXl,
+              boxShadow:
+                  isDark ? AppShadows.smDark : AppShadows.smLight,
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Row(
+                children: [
+                  // Illustration
+                  ClipRRect(
+                    borderRadius: AppRadius.radiusMd,
+                    child: Image.asset(
+                      'assets/images/group_celebration.png',
+                      width: 72,
+                      height: 72,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: AppRadius.radiusMd,
+                        ),
+                        child: Icon(
+                          Icons.celebration_rounded,
+                          color: colorScheme.primary,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  // Text
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Create a new group',
+                          style: AppTextStyles.titleSmall.copyWith(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Add friends and start splitting\nexpenses easily.',
+                          style: AppTextStyles.caption.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  // Arrow icon — matches the group card style.
+                  Container(
+                    width: 32,
+                    height: 32,
                     decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: AppRadius.radiusMd,
+                      color: colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.7),
+                      shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons.celebration_rounded,
-                      color: colorScheme.primary,
-                      size: 36,
+                      Icons.arrow_forward_rounded,
+                      size: 16,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.md),
-              // Text
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Create a new group',
-                      style: AppTextStyles.titleSmall.copyWith(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Add friends and start splitting\nexpenses easily.',
-                      style: AppTextStyles.caption.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              // CTA button
-              FilledButton.icon(
-                onPressed: onCreateGroup,
-                icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
-                label: const Text('Create\nGroup'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.sm,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: AppRadius.radiusLg,
-                  ),
-                  textStyle: AppTextStyles.labelSmall.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1993,9 +2240,13 @@ class _Satellite extends StatelessWidget {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _NoResultsState extends StatelessWidget {
-  const _NoResultsState({required this.colorScheme});
+  const _NoResultsState({
+    required this.colorScheme,
+    this.isSearching = false,
+  });
 
   final ColorScheme colorScheme;
+  final bool isSearching;
 
   @override
   Widget build(BuildContext context) {
@@ -2003,13 +2254,13 @@ class _NoResultsState extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(
-          Icons.filter_list_off_rounded,
+          isSearching ? Icons.search_off_rounded : Icons.filter_list_off_rounded,
           size: 56,
           color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
         ),
         const SizedBox(height: AppSpacing.lg),
         Text(
-          'No groups match this filter',
+          isSearching ? 'No groups found' : 'No groups match this filter',
           style: AppTextStyles.titleSmall.copyWith(
             color: colorScheme.onSurface,
             fontWeight: FontWeight.w700,
@@ -2017,7 +2268,9 @@ class _NoResultsState extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Try switching to "All Groups".',
+          isSearching
+              ? 'Try a different search term.'
+              : 'Try switching to "All Groups".',
           style: AppTextStyles.bodySmall.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
