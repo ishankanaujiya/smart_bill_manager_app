@@ -52,6 +52,7 @@ dependencies:
   intl: ^0.20.3
   flutter_local_notifications: ^22.3.0
   onesignal_flutter: ^5.6.8
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

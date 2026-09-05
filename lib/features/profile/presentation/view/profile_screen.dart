@@ -7,6 +7,7 @@ import '../../../auth/presentation/state/auth_providers.dart';
 import '../../../auth/presentation/view/welcome_screen.dart';
 import 'appearance_screen.dart';
 import 'edit_profile_screen.dart';
+import 'help_support_screen.dart';
 import 'payment_methods_screen.dart';
 
 /// Profile tab — hero header card, user info, and settings rows.
@@ -165,10 +166,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     ),
                   ),
                   _SettingsItem(
-                    icon: Icons.lock_outline_rounded,
-                    label: 'Privacy & Security',
-                  ),
-                  _SettingsItem(
                     icon: Icons.account_balance_wallet_outlined,
                     label: 'Payment Methods',
                     onTap: () => Navigator.of(context).push(
@@ -231,10 +228,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               child: _SettingsGroup(
                 isDark: isDark,
                 colorScheme: colorScheme,
-                items: const [
+                items: [
                   _SettingsItem(
                     icon: Icons.help_outline_rounded,
                     label: 'Help & Support',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const HelpSupportScreen(),
+                      ),
+                    ),
                   ),
                 ],
               ),

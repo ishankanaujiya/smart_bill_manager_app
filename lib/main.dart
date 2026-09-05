@@ -70,7 +70,7 @@ class SmartBillManagerApp extends StatelessWidget {
       valueListenable: themeModeNotifier,
       builder: (context, mode, _) {
         return MaterialApp(
-          title: 'Smart Bill Manager',
+          title: 'Tabora',
           debugShowCheckedModeBanner: false,
           navigatorKey: appNavigatorKey,
           theme: AppTheme.light,
