@@ -1,23 +1,34 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
+import '../../../auth/presentation/state/auth_providers.dart';
+import '../../../expenses/presentation/state/bill_providers.dart';
+import '../../../groups/domain/entities/group.dart';
+import '../../../groups/presentation/state/group_providers.dart';
+import '../../../groups/presentation/view/group_details_screen.dart';
+import '../../../users/domain/entities/app_user.dart';
 
 /// Home tab for the app shell.
 ///
-/// Mirrors the provided design: greeting header, financial summary card,
-/// quick stat tiles, active payments, groups list and a settle-up banner.
-/// Every section is wrapped in a coordinated staggered entrance animation.
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+/// Displays a greeting header, financial summary card, quick stat tiles,
+/// and a list of the user's groups. All data is sourced from real-time
+/// Riverpod providers — no mocked values.
+class HomeScreen extends ConsumerStatefulWidget {
+  const HomeScreen({super.key, this.onNavigateToTab});
+
+  /// Callback to switch the bottom nav tab (e.g. to the Groups tab).
+  final void Function(int index)? onNavigateToTab;
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with TickerProviderStateMixin {
   AnimationController? _entranceCtrl;
   AnimationController? _ambientCtrl;
 
@@ -62,6 +73,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final appUserAsync = ref.watch(currentAppUserProvider);
+    final groupsAsync = ref.watch(groupsForCurrentUserProvider);
+    final balanceAsync = ref.watch(userBalanceProvider);
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -70,22 +84,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _staggeredEntrance(
-              _buildHeader(colorScheme),
+              _buildHeader(colorScheme, appUserAsync),
               start: 0.0,
               end: 0.25,
             ),
             const SizedBox(height: AppSpacing.xxl),
             _staggeredEntrance(
-              _buildFinancialSummaryCard(colorScheme),
+              _buildFinancialSummaryCard(colorScheme, balanceAsync),
               start: 0.08,
               end: 0.32,
             ),
             const SizedBox(height: AppSpacing.xxxl),
-            _buildQuickStatsRow(colorScheme),
+            _buildQuickStatsRow(colorScheme, balanceAsync),
             const SizedBox(height: AppSpacing.xxxl),
-            _buildActivePaymentsSection(colorScheme),
-            const SizedBox(height: AppSpacing.xxxl),
-            _buildYourGroupsSection(colorScheme),
+            _buildYourGroupsSection(colorScheme, groupsAsync),
             const SizedBox(height: AppSpacing.xxxl),
             _staggeredEntrance(
               _buildSettleBanner(colorScheme),
@@ -103,16 +115,42 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Greeting header
   // ───────────────────────────────────────────────────────────────────────────
 
-  Widget _buildHeader(ColorScheme colorScheme) {
+  Widget _buildHeader(ColorScheme colorScheme, AsyncValue<AppUser?> userAsync) {
     return Row(
       children: [
-        CircleAvatar(
-          radius: 28,
-          backgroundColor: colorScheme.primaryContainer,
-          child: Icon(
-            Icons.person_rounded,
-            color: colorScheme.onPrimaryContainer,
-            size: 28,
+        userAsync.when(
+          data: (user) => (user?.profilePicture != null &&
+                  user!.profilePicture!.isNotEmpty)
+              ? CircleAvatar(
+                  radius: 28,
+                  backgroundImage: NetworkImage(user.profilePicture!),
+                )
+              : CircleAvatar(
+                  radius: 28,
+                  backgroundColor: colorScheme.primaryContainer,
+                  child: Icon(
+                    Icons.person_rounded,
+                    color: colorScheme.onPrimaryContainer,
+                    size: 28,
+                  ),
+                ),
+          loading: () => CircleAvatar(
+            radius: 28,
+            backgroundColor: colorScheme.primaryContainer,
+            child: Icon(
+              Icons.person_rounded,
+              color: colorScheme.onPrimaryContainer,
+              size: 28,
+            ),
+          ),
+          error: (_, __) => CircleAvatar(
+            radius: 28,
+            backgroundColor: colorScheme.primaryContainer,
+            child: Icon(
+              Icons.person_rounded,
+              color: colorScheme.onPrimaryContainer,
+              size: 28,
+            ),
           ),
         ),
         const SizedBox(width: AppSpacing.md),
@@ -121,7 +159,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Hi, Ishan 👋',
+                'Hi, ${userAsync.maybeWhen(
+                      data: (user) =>
+                          (user?.displayName?.isNotEmpty == true
+                              ? user!.displayName!
+                              : user?.fullName) ??
+                          'there',
+                      orElse: () => 'there',
+                    )} 👋',
                 style: AppTextStyles.headlineSmall.copyWith(
                   color: colorScheme.onSurface,
                 ),
@@ -170,33 +215,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   /// dark mode.  All content is rendered in `AppColors.white` so it remains
   /// crisp and readable regardless of the theme — `colorScheme.onPrimary` in
   /// dark mode is dark navy and would vanish on the bright teal.
-  ///
-  /// Layered animations:
-  /// 1.  Entrance — card scales + fades in.
-  /// 2.  Pulsing glow blob — a soft white circle behind the wallet breathes.
-  /// 3.  Floating wallet — the wallet illustration bobs up and down forever.
-  /// 4.  Shimmer sweep — a subtle light streak sweeps across the card.
-  /// 5.  Pulsing glow shadow — the card's teal shadow breathes.
-  Widget _buildFinancialSummaryCard(ColorScheme colorScheme) {
+  Widget _buildFinancialSummaryCard(
+    ColorScheme colorScheme,
+    AsyncValue<UserBalance> balanceAsync,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // ── Colours resolved purely from design-system tokens ──────────────────
-    //
-    // In light mode we follow the colour scheme and let `onPrimary` be white.
-    // In dark mode the card uses a dark primary-tinted surface, so all content
-    // must be white for contrast — `onPrimary` in dark is dark navy and would
-    // vanish against the dark teal.
     final contentColor = isDark ? AppColors.white : colorScheme.onPrimary;
     final contentSoft = contentColor.withValues(alpha: 0.85);
     final contentMuted = contentColor.withValues(alpha: isDark ? 0.60 : 0.65);
     final blobColor = isDark
         ? AppColors.white.withValues(alpha: 0.07)
         : colorScheme.onPrimary.withValues(alpha: 0.18);
-    // Dark mode uses a slightly higher alpha for the pill and icon circle
-    // so they read clearly against the bright teal gradient.
     final tagBg = contentColor.withValues(alpha: isDark ? 0.15 : 0.22);
     final tagFg = contentColor;
     final iconCircleBg = contentColor.withValues(alpha: isDark ? 0.18 : 0.2);
+
+    // Real balance data.
+    final balance = balanceAsync.valueOrNull ?? const UserBalance.zero();
+    final netBalance = balance.youAreOwed - balance.youOwe;
+    final isAhead = netBalance >= 0;
 
     // Entrance: scale + fade.
     final entranceAnim = Tween<double>(begin: 0.92, end: 1.0).animate(
@@ -234,9 +273,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final scale = entranceAnim.value.clamp(0.0, 1.2);
         final opacity = entranceOpacity.value.clamp(0.0, 1.0);
 
-        // Pulsing glow — same technique as the sign-in button.
-        // Dark mode uses a softer, more diffuse glow so the bright teal
-        // doesn't overpower the surrounding dark surface.
+        // Pulsing glow.
         final pulse = (1 - math.cos(math.pi * 2 * _ambient.value)) * 0.5;
         final glowAlpha =
             isDark ? (0.12 + 0.15 * pulse) : (0.15 + 0.30 * pulse);
@@ -337,7 +374,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 Text(
-                                  'Rs. 12,450',
+                                  AppConstants.formatCurrency(
+                                    netBalance.abs(),
+                                    withSymbol: true,
+                                  ),
                                   style: AppTextStyles.headlineLarge.copyWith(
                                     color: contentColor,
                                     fontWeight: FontWeight.w800,
@@ -351,7 +391,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
-                                    Icons.north_east_rounded,
+                                    isAhead
+                                        ? Icons.north_east_rounded
+                                        : Icons.south_west_rounded,
                                     color: contentColor,
                                     size: 18,
                                   ),
@@ -360,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ),
                             const SizedBox(height: AppSpacing.md),
 
-                            // "You're ahead" pill.
+                            // Status pill.
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: AppSpacing.md,
@@ -374,13 +416,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    Icons.check_circle_rounded,
+                                    isAhead
+                                        ? Icons.check_circle_rounded
+                                        : Icons.info_rounded,
                                     color: tagFg,
                                     size: 14,
                                   ),
                                   const SizedBox(width: AppSpacing.xs),
                                   Text(
-                                    "You're ahead",
+                                    isAhead
+                                        ? "You're ahead"
+                                        : "You're behind",
                                     style: AppTextStyles.labelSmall.copyWith(
                                       color: tagFg,
                                       fontWeight: FontWeight.w600,
@@ -404,15 +450,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   /// Card background — static, no rotation.
-  ///
-  /// Uses a solid `colorScheme.primary` fill in both light and dark mode so
-  /// the card stays consistent with the app's unified primary colour.
-  /// All content stays white for crisp contrast.
   Widget _buildCardBackground(ColorScheme colorScheme) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Dark mode: blend 45% of the primary into the dark surface so the
-    // card retains its teal identity without glowing too brightly.
     if (isDark) {
       return Container(
         decoration: BoxDecoration(
@@ -432,10 +472,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   /// A translucent vertical light band that sweeps left → right across the
-  /// card.  Driven by the ambient controller so it loops forever.
+  /// card.  Driven by the ambient animation controller.
   Widget _buildShimmerSweep(double t) {
-    // `t` ranges from -0.3 → 1.3.  Map to a fraction of card width.
-    final left = t * 1.0; // 0..1 of width
+    final left = t * 1.0;
     return Positioned.fill(
       child: CustomPaint(
         painter: _ShimmerPainter(progress: left.clamp(-0.5, 1.5)),
@@ -445,14 +484,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   /// Wallet image with a continuous gentle bob after the entrance pop.
   Widget _buildFloatingWallet() {
-    // Entrance pop (scale + fade).
     final pop = Tween<double>(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(
         parent: _entrance,
         curve: const Interval(0.12, 0.42, curve: Curves.easeOutBack),
       ),
     );
-    // Continuous float (±6px sine wave).
     final float = (math.sin(_ambient.value * 2 * 3.14159) * 6.0);
 
     return AnimatedBuilder(
@@ -484,26 +521,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Quick stats row
   // ───────────────────────────────────────────────────────────────────────────
 
-  Widget _buildQuickStatsRow(ColorScheme colorScheme) {
-    const stats = [
+  Widget _buildQuickStatsRow(
+    ColorScheme colorScheme,
+    AsyncValue<UserBalance> balanceAsync,
+  ) {
+    final balance = balanceAsync.valueOrNull ?? const UserBalance.zero();
+
+    final stats = [
       _QuickStat(
-        label: 'Money Received',
-        amount: 'Rs. 18,750',
-        caption: 'from 5 people',
+        label: "You're Owed",
+        amount: AppConstants.formatCurrency(balance.youAreOwed,
+            withSymbol: true),
+        caption:
+            'Across ${balance.youAreOwedGroupCount} group${balance.youAreOwedGroupCount == 1 ? '' : 's'}',
         icon: Icons.arrow_downward,
         iconColor: AppColors.chartTeal,
       ),
       _QuickStat(
-        label: 'Money to Pay',
-        amount: 'Rs. 6,300',
-        caption: 'to 3 people',
+        label: 'You Owe',
+        amount:
+            AppConstants.formatCurrency(balance.youOwe, withSymbol: true),
+        caption:
+            'Across ${balance.youOweGroupCount} group${balance.youOweGroupCount == 1 ? '' : 's'}',
         icon: Icons.arrow_upward,
-        iconColor: AppColors.success,
+        iconColor: AppColors.chartOrange,
       ),
       _QuickStat(
-        label: 'Settled This Month',
-        amount: 'Rs. 9,650',
-        caption: 'across 12 payments',
+        label: 'Net Balance',
+        amount: AppConstants.formatCurrency(
+            (balance.youAreOwed - balance.youOwe).abs(),
+            withSymbol: true),
+        caption: (balance.youAreOwed - balance.youOwe) >= 0
+            ? "You're ahead"
+            : "You're behind",
         icon: Icons.check_circle_rounded,
         iconColor: AppColors.chartBlue,
       ),
@@ -532,148 +582,129 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Active payments section
+  // Your groups section
   // ───────────────────────────────────────────────────────────────────────────
 
-  Widget _buildActivePaymentsSection(ColorScheme colorScheme) {
+  Widget _buildYourGroupsSection(
+    ColorScheme colorScheme,
+    AsyncValue<List<Group>> groupsAsync,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    const payments = [
-      _ActivePayment(
-        name: 'Goa Trip',
-        icon: Icons.beach_access_rounded,
-        iconColor: AppColors.chartTeal,
-        status: 'You owe',
-        amount: 'Rs. 2,450',
-        isOwed: true,
-        progress: 0.5,
-        fraction: '2/4 paid',
-        memberColors: [
-          AppColors.chartTeal,
-          AppColors.chartOrange,
-          AppColors.chartBlue,
-          AppColors.chartPurple
-        ],
-      ),
-      _ActivePayment(
-        name: 'Office Dinner',
-        icon: Icons.restaurant_rounded,
-        iconColor: AppColors.chartOrange,
-        status: 'You owe',
-        amount: 'Rs. 1,200',
-        isOwed: true,
-        progress: 0.25,
-        fraction: '1/4 paid',
-        memberColors: [
-          AppColors.chartOrange,
-          AppColors.chartBlue,
-          AppColors.chartPurple,
-          AppColors.chartPink
-        ],
-      ),
-      _ActivePayment(
-        name: 'Weekend Retreat',
-        icon: Icons.landscape_rounded,
-        iconColor: AppColors.chartGreen,
-        status: "You'll receive",
-        amount: 'Rs. 850',
-        isOwed: false,
-        progress: 0.75,
-        fraction: '3/4 paid',
-        memberColors: [
-          AppColors.chartGreen,
-          AppColors.chartCyan,
-          AppColors.chartYellow,
-          AppColors.chartBlue
-        ],
-      ),
-    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _staggeredEntrance(
-          _buildSectionHeader('Active Payments', colorScheme),
-          start: 0.3,
-          end: 0.45,
+          _buildSectionHeader(
+            'Your Groups',
+            colorScheme,
+            onSeeAll: () => widget.onNavigateToTab?.call(1),
+          ),
+          start: 0.45,
+          end: 0.6,
         ),
         const SizedBox(height: AppSpacing.md),
-        SizedBox(
-          height: 200,
-          child: ListView.separated(
-            clipBehavior: Clip.none,
-            scrollDirection: Axis.horizontal,
-            itemCount: payments.length,
-            separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
-            itemBuilder: (context, index) {
+        groupsAsync.when(
+          data: (groups) {
+            if (groups.isEmpty) {
               return _staggeredEntrance(
-                _ActivePaymentCard(
-                  payment: payments[index],
-                  colorScheme: colorScheme,
-                  isDark: isDark,
-                  entranceController: _entrance,
-                ),
-                start: 0.38 + (index * 0.06),
-                end: 0.58 + (index * 0.06),
+                _buildEmptyGroups(colorScheme),
+                start: 0.5,
+                end: 0.65,
               );
-            },
+            }
+            // Show at most 3 groups, sorted by most recently updated.
+            final sorted = [...groups]
+              ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+            final shown = sorted.take(3).toList();
+            return Column(
+              children: shown.indexed.map((e) {
+                final (index, group) = e;
+                return _staggeredEntrance(
+                  _GroupListTile(
+                    group: group,
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                  ),
+                  start: 0.52 + (index * 0.05),
+                  end: 0.72 + (index * 0.05),
+                );
+              }).toList(),
+            );
+          },
+          loading: () => _buildGroupsSkeleton(colorScheme, isDark),
+          error: (_, __) => _staggeredEntrance(
+            _buildEmptyGroups(colorScheme),
+            start: 0.5,
+            end: 0.65,
           ),
         ),
       ],
     );
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Your groups section
-  // ───────────────────────────────────────────────────────────────────────────
-
-  Widget _buildYourGroupsSection(ColorScheme colorScheme) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    const groups = [
-      _GroupItem(
-        name: 'Goa Trip',
-        members: 4,
-        icon: Icons.beach_access_rounded,
-        iconColor: AppColors.chartTeal,
-        amount: 'Rs. 2,450',
-      ),
-      _GroupItem(
-        name: 'Flatmates',
-        members: 5,
-        icon: Icons.restaurant_rounded,
-        iconColor: AppColors.chartOrange,
-        amount: 'Rs. 1,800',
-      ),
-      _GroupItem(
-        name: 'Office Team',
-        members: 6,
-        icon: Icons.work_rounded,
-        iconColor: AppColors.chartBlue,
-        amount: 'Rs. 3,200',
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _staggeredEntrance(
-          _buildSectionHeader('Your Groups', colorScheme),
-          start: 0.45,
-          end: 0.6,
+  Widget _buildEmptyGroups(ColorScheme colorScheme) {
+    return Container(
+      padding: AppSpacing.cardPadding,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppRadius.radiusXxl,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
-        const SizedBox(height: AppSpacing.md),
-        ...groups.indexed.map((e) {
-          final (index, group) = e;
-          return _staggeredEntrance(
-            _GroupListTile(
-              group: group,
-              colorScheme: colorScheme,
-              isDark: isDark,
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.groups_2_outlined,
+            size: 48,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'No groups yet',
+            style: AppTextStyles.titleSmall.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
             ),
-            start: 0.52 + (index * 0.05),
-            end: 0.72 + (index * 0.05),
-          );
-        }),
-      ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Create a group to start splitting bills.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupsSkeleton(ColorScheme colorScheme, bool isDark) {
+    return Column(
+      children: List.generate(3, (index) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: AppSpacing.md),
+          height: 76,
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: AppRadius.radiusXxl,
+            boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: LinearProgressIndicator(
+                backgroundColor:
+                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                color: colorScheme.primary.withValues(alpha: 0.2),
+                minHeight: 2,
+              ),
+            ),
+          ),
+        );
+      }),
     );
   }
 
@@ -728,7 +759,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
           FilledButton(
-            onPressed: () {},
+            onPressed: () => widget.onNavigateToTab?.call(1),
             child: const Text('Settle Now'),
           ),
         ],
@@ -740,7 +771,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Shared helpers
   // ───────────────────────────────────────────────────────────────────────────
 
-  Widget _buildSectionHeader(String title, ColorScheme colorScheme) {
+  Widget _buildSectionHeader(
+    String title,
+    ColorScheme colorScheme, {
+    VoidCallback? onSeeAll,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -750,21 +785,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             color: colorScheme.onSurface,
           ),
         ),
-        TextButton(
-          onPressed: () {},
-          style: TextButton.styleFrom(
-            padding: EdgeInsets.zero,
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(
-            'See all',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.w600,
+        if (onSeeAll != null)
+          TextButton(
+            onPressed: onSeeAll,
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'See all',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -788,46 +824,6 @@ class _QuickStat {
   final String caption;
   final IconData icon;
   final Color iconColor;
-}
-
-class _ActivePayment {
-  const _ActivePayment({
-    required this.name,
-    required this.icon,
-    required this.iconColor,
-    required this.status,
-    required this.amount,
-    required this.isOwed,
-    required this.progress,
-    required this.fraction,
-    required this.memberColors,
-  });
-
-  final String name;
-  final IconData icon;
-  final Color iconColor;
-  final String status;
-  final String amount;
-  final bool isOwed;
-  final double progress;
-  final String fraction;
-  final List<Color> memberColors;
-}
-
-class _GroupItem {
-  const _GroupItem({
-    required this.name,
-    required this.members,
-    required this.icon,
-    required this.iconColor,
-    required this.amount,
-  });
-
-  final String name;
-  final int members;
-  final IconData icon;
-  final Color iconColor;
-  final String amount;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -856,7 +852,6 @@ class _QuickStatCard extends StatelessWidget {
         color: colorScheme.surface,
         borderRadius: AppRadius.radiusXl,
         boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
-        // Subtle primary top accent — matches the auth step indicator.
         border: Border(
           top: BorderSide(
             color: stat.iconColor.withValues(alpha: 0.4),
@@ -869,8 +864,6 @@ class _QuickStatCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Icon circle — surface fill with a stat-specific tinted border and
-          // icon, plus a subtle glow in that same colour.
           Container(
             width: 40,
             height: 40,
@@ -897,7 +890,6 @@ class _QuickStatCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          // Label – may wrap to two lines (matches the design for long labels).
           Text(
             stat.label,
             style: AppTextStyles.bodySmall.copyWith(
@@ -906,7 +898,6 @@ class _QuickStatCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          // Amount – semi-bold, primary text colour.
           Text(
             stat.amount,
             style: AppTextStyles.titleSmall.copyWith(
@@ -915,7 +906,6 @@ class _QuickStatCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          // Caption.
           Text(
             stat.caption,
             style: AppTextStyles.caption.copyWith(
@@ -929,282 +919,101 @@ class _QuickStatCard extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Active payment card
+// Group list tile — uses real Group data
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _ActivePaymentCard extends StatelessWidget {
-  const _ActivePaymentCard({
-    required this.payment,
-    required this.colorScheme,
-    required this.isDark,
-    required this.entranceController,
-  });
-
-  final _ActivePayment payment;
-  final ColorScheme colorScheme;
-  final bool isDark;
-  final AnimationController entranceController;
-
-  @override
-  Widget build(BuildContext context) {
-    final statusColor =
-        payment.isOwed ? AppColors.chartOrange : AppColors.success;
-
-    return Container(
-      width: 170,
-      padding: AppSpacing.cardPadding,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: AppRadius.radiusXxl,
-        boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                decoration: BoxDecoration(
-                  color: payment.iconColor.withValues(alpha: 0.12),
-                  borderRadius: AppRadius.radiusLg,
-                ),
-                child: Icon(
-                  payment.icon,
-                  color: payment.iconColor,
-                  size: 24,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            payment.name,
-            style: AppTextStyles.titleSmall.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            payment.status,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: statusColor,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            payment.amount,
-            style: AppTextStyles.titleMedium.copyWith(
-              color: statusColor,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const Spacer(),
-          _buildProgressBar(
-            progress: payment.progress,
-            color: payment.iconColor,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              _buildAvatarStack(payment.memberColors),
-              const Spacer(),
-              Text(
-                payment.fraction,
-                style: AppTextStyles.caption.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProgressBar({
-    required double progress,
-    required Color color,
-  }) {
-    final progressAnimation = Tween<double>(begin: 0.0, end: progress).animate(
-      CurvedAnimation(
-        parent: entranceController,
-        curve: const Interval(0.45, 0.85, curve: Curves.easeOutCubic),
-      ),
-    );
-
-    return Container(
-      height: 6,
-      decoration: BoxDecoration(
-        color: colorScheme.outlineVariant,
-        borderRadius: AppRadius.radiusFull,
-      ),
-      child: AnimatedBuilder(
-        animation: progressAnimation,
-        builder: (context, child) {
-          return FractionallySizedBox(
-            widthFactor: progressAnimation.value.clamp(0.0, 1.0),
-            alignment: Alignment.centerLeft,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [color, color.withValues(alpha: 0.7)],
-                ),
-                borderRadius: AppRadius.radiusFull,
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildAvatarStack(List<Color> colors) {
-    return SizedBox(
-      height: 28,
-      width: (colors.length - 1) * 18.0 + 28,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (var i = 0; i < colors.length; i++)
-            Positioned(
-              left: i * 18.0,
-              child: _buildAvatar(colors[i], i),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAvatar(Color color, int index) {
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: colorScheme.surface,
-          width: 2,
-        ),
-      ),
-      child: Center(
-        child: Text(
-          String.fromCharCode('A'.codeUnitAt(0) + index),
-          style: AppTextStyles.labelSmall.copyWith(
-            color: AppColors.white,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Group list tile
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _GroupListTile extends StatelessWidget {
+class _GroupListTile extends ConsumerWidget {
   const _GroupListTile({
     required this.group,
     required this.colorScheme,
     required this.isDark,
   });
 
-  final _GroupItem group;
+  final Group group;
   final ColorScheme colorScheme;
   final bool isDark;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: AppSpacing.cardPadding,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: AppRadius.radiusXxl,
-        boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: group.iconColor.withValues(alpha: 0.12),
-              borderRadius: AppRadius.radiusLg,
-            ),
-            child: Icon(
-              group.icon,
-              color: group.iconColor,
-              size: 26,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final uid = ref.watch(currentUidProvider);
+    return GestureDetector(
+      onTap: () {
+        if (uid == null) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => GroupDetailsScreen(
+              group: group,
+              currentUserId: uid,
             ),
           ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  group.name,
-                  style: AppTextStyles.titleSmall.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${group.members} members',
-                  style: AppTextStyles.caption.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'You owe',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.chartOrange,
-                ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.md),
+        padding: AppSpacing.cardPadding,
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: AppRadius.radiusXxl,
+          boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer,
+                borderRadius: AppRadius.radiusLg,
               ),
-              const SizedBox(height: 2),
-              Text(
-                group.amount,
-                style: AppTextStyles.titleMedium.copyWith(
-                  color: AppColors.chartOrange,
-                  fontWeight: FontWeight.w700,
-                ),
+              child: Icon(
+                Icons.groups_2_rounded,
+                color: colorScheme.primary,
+                size: 26,
               ),
-            ],
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: colorScheme.onSurfaceVariant,
-            size: 22,
-          ),
-        ],
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    group.groupName,
+                    style: AppTextStyles.titleSmall.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                    style: AppTextStyles.caption.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: colorScheme.onSurfaceVariant,
+              size: 22,
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Shimmer painter — paints a soft diagonal light band that sweeps across the
-// financial summary card.  Driven by the ambient animation controller.
+// Shimmer painter
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _ShimmerPainter extends CustomPainter {
   _ShimmerPainter({required this.progress});
 
-  /// 0 = far left, 1 = far right.  Values outside [0, 1] keep the band
-  /// off-card so the sweep fades in/out naturally.
   final double progress;
 
   @override
@@ -1212,7 +1021,6 @@ class _ShimmerPainter extends CustomPainter {
     final width = size.width;
     final height = size.height;
 
-    // The band is ~25% of the card width.
     final bandWidth = width * 0.25;
     final centerX = progress * width;
 
@@ -1235,7 +1043,7 @@ class _ShimmerPainter extends CustomPainter {
       ).createShader(rect);
 
     canvas.save();
-    canvas.rotate(0.15); // slight diagonal tilt
+    canvas.rotate(0.15);
     canvas.drawRect(rect, paint);
     canvas.restore();
   }

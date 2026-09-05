@@ -28,13 +28,12 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
 
   static const _navHeight = 78.0;
 
-  static const _pages = <Widget>[
-    HomeScreen(),
+  late final List<Widget> _pages = [
+    HomeScreen(onNavigateToTab: _onTabSelected),
     GroupsScreen(),
-    SizedBox.shrink(),
-    ProfileScreen(),
+    const SizedBox.shrink(),
+    const ProfileScreen(),
   ];
-
   @override
   void initState() {
     super.initState();
