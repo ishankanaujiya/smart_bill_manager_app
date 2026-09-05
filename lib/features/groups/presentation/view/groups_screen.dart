@@ -15,8 +15,6 @@ import 'group_details_screen.dart';
 // Filter / sort enums
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum _GroupFilter { all, owesYou, youOwe }
-
 enum _GroupSort { recent, name }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,7 +46,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   late final AnimationController _ambientController;
   late final AnimationController _patternController;
 
-  _GroupFilter _activeFilter = _GroupFilter.all;
   _GroupSort _activeSort = _GroupSort.recent;
 
   /// Whether the search field is currently shown.
@@ -124,17 +121,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
         : groups
             .where((g) => g.groupName.toLowerCase().startsWith(_searchQuery))
             .toList();
-
-    // Then apply the active filter chip.
-    switch (_activeFilter) {
-      case _GroupFilter.all:
-        break;
-      case _GroupFilter.owesYou:
-        // Show groups with more than 1 member (placeholder logic)
-        filtered = filtered.where((g) => g.memberCount > 1).toList();
-      case _GroupFilter.youOwe:
-        filtered = filtered.where((g) => g.memberCount == 1).toList();
-    }
 
     final sorted = [...filtered];
     switch (_activeSort) {
@@ -217,17 +203,15 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
             ),
           ),
 
-          // ── Filter chips ─────────────────────────────────────────────────
+          // ── Sort bar ────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
               animation: _entranceController,
               interval: const Interval(0.2, 0.5, curve: Curves.easeOutCubic),
               slideOffset: 20,
               child: _FilterBar(
-                activeFilter: _activeFilter,
                 activeSort: _activeSort,
                 colorScheme: colorScheme,
-                onFilterChanged: (f) => setState(() => _activeFilter = f),
                 onSortChanged: (s) => setState(() => _activeSort = s),
               ),
             ),
@@ -849,17 +833,13 @@ class _StatsRowSkeletonState extends State<_StatsRowSkeleton>
 
 class _FilterBar extends StatelessWidget {
   const _FilterBar({
-    required this.activeFilter,
     required this.activeSort,
     required this.colorScheme,
-    required this.onFilterChanged,
     required this.onSortChanged,
   });
 
-  final _GroupFilter activeFilter;
   final _GroupSort activeSort;
   final ColorScheme colorScheme;
-  final ValueChanged<_GroupFilter> onFilterChanged;
   final ValueChanged<_GroupSort> onSortChanged;
 
   @override
@@ -873,41 +853,17 @@ class _FilterBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Scrollable filter chips
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _FilterChip(
-                    label: 'All Groups',
-                    icon: Icons.grid_view_rounded,
-                    isActive: activeFilter == _GroupFilter.all,
-                    colorScheme: colorScheme,
-                    onTap: () => onFilterChanged(_GroupFilter.all),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  _FilterChip(
-                    label: 'Owes You',
-                    icon: Icons.arrow_downward_rounded,
-                    isActive: activeFilter == _GroupFilter.owesYou,
-                    colorScheme: colorScheme,
-                    onTap: () => onFilterChanged(_GroupFilter.owesYou),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  _FilterChip(
-                    label: 'You Owe',
-                    icon: Icons.arrow_upward_rounded,
-                    isActive: activeFilter == _GroupFilter.youOwe,
-                    colorScheme: colorScheme,
-                    onTap: () => onFilterChanged(_GroupFilter.youOwe),
-                  ),
-                ],
-              ),
-            ),
+          // All Groups chip — styled like the sort dropdown
+          _FilterChip(
+            label: 'All Groups',
+            icon: Icons.grid_view_rounded,
+            isActive: false,
+            colorScheme: colorScheme,
+            onTap: () {},
           ),
           const SizedBox(width: AppSpacing.sm),
-          // Sort dropdown (fixed on right)
+          const Spacer(),
+          // Sort dropdown
           _SortDropdown(
             activeSort: activeSort,
             colorScheme: colorScheme,
@@ -987,7 +943,7 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _SortDropdown extends StatelessWidget {
+class _SortDropdown extends StatefulWidget {
   const _SortDropdown({
     required this.activeSort,
     required this.colorScheme,
@@ -999,15 +955,28 @@ class _SortDropdown extends StatelessWidget {
   final ValueChanged<_GroupSort> onChanged;
 
   @override
+  State<_SortDropdown> createState() => _SortDropdownState();
+}
+
+class _SortDropdownState extends State<_SortDropdown> {
+  final GlobalKey _key = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      key: _key,
       onTap: () async {
+        final renderBox =
+            _key.currentContext?.findRenderObject() as RenderBox?;
+        if (renderBox == null) return;
+        final size = renderBox.size;
+        final offset = renderBox.localToGlobal(Offset.zero);
         final result = await showMenu<_GroupSort>(
           context: context,
           position: RelativeRect.fromLTRB(
-            MediaQuery.sizeOf(context).width,
-            80,
-            AppSpacing.screenHorizontal,
+            offset.dx,
+            offset.dy + size.height + 4,
+            offset.dx + size.width,
             0,
           ),
           shape: RoundedRectangleBorder(
@@ -1018,7 +987,7 @@ class _SortDropdown extends StatelessWidget {
             PopupMenuItem(value: _GroupSort.name, child: Text('Name')),
           ],
         );
-        if (result != null) onChanged(result);
+        if (result != null) widget.onChanged(result);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(
@@ -1026,17 +995,18 @@ class _SortDropdown extends StatelessWidget {
           vertical: AppSpacing.sm - 2,
         ),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          color: widget.colorScheme.surfaceContainerHighest
+              .withValues(alpha: 0.6),
           borderRadius: AppRadius.radiusFull,
-          border: Border.all(color: colorScheme.outlineVariant),
+          border: Border.all(color: widget.colorScheme.outlineVariant),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              activeSort == _GroupSort.recent ? 'Recent' : 'Name',
+              widget.activeSort == _GroupSort.recent ? 'Recent' : 'Name',
               style: AppTextStyles.labelSmall.copyWith(
-                color: colorScheme.onSurfaceVariant,
+                color: widget.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -1044,7 +1014,7 @@ class _SortDropdown extends StatelessWidget {
             Icon(
               Icons.keyboard_arrow_down_rounded,
               size: 14,
-              color: colorScheme.onSurfaceVariant,
+              color: widget.colorScheme.onSurfaceVariant,
             ),
           ],
         ),
@@ -2270,7 +2240,7 @@ class _NoResultsState extends StatelessWidget {
         Text(
           isSearching
               ? 'Try a different search term.'
-              : 'Try switching to "All Groups".',
+              : 'No groups available yet.',
           style: AppTextStyles.bodySmall.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
