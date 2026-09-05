@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/notifications/notification_dispatcher.dart';
 import '../../data/repositories/group_repository_impl.dart';
 import '../../data/service/cloudinary_service.dart';
 import '../../domain/entities/group.dart';
@@ -64,11 +67,12 @@ class CreateGroupError extends CreateGroupState {
 /// Exposes loading/success/error state to the UI so the create button can
 /// show a spinner and the screen can react to the result.
 class CreateGroupNotifier extends StateNotifier<CreateGroupState> {
-  CreateGroupNotifier(this._groupRepo, this._cloudinary)
+  CreateGroupNotifier(this._groupRepo, this._cloudinary, this._dispatcher)
       : super(const CreateGroupIdle());
 
   final GroupRepository _groupRepo;
   final CloudinaryService _cloudinary;
+  final NotificationDispatcher _dispatcher;
 
   /// Creates a new group.
   ///
@@ -134,6 +138,28 @@ class CreateGroupNotifier extends StateNotifier<CreateGroupState> {
       final saved = await _groupRepo.createGroup(group);
 
       state = CreateGroupSuccess(saved);
+
+      // 4. Notify every added member (except the creator) that they were
+      //    added to a new group. Fire-and-forget — errors are swallowed.
+      final recipientIds = members
+          .map((m) => m.id)
+          .where((id) => id != createdByUid)
+          .toList();
+      debugPrint('[CreateGroupNotifier] recipientIds for notification: $recipientIds');
+      if (recipientIds.isNotEmpty) {
+        final actorName =
+            FirebaseAuth.instance.currentUser?.displayName?.trim();
+        unawaited(_dispatcher.dispatch(
+          type: NotificationType.groupAdded,
+          targetUserIds: recipientIds,
+          params: {
+            'actorName': actorName?.isNotEmpty == true ? actorName! : 'A member',
+            'groupName': trimmedName,
+            'groupId': saved.id,
+          },
+        ));
+      }
+
       return true;
     } on FirebaseException catch (e) {
       final message = switch (e.code) {
@@ -167,6 +193,7 @@ final createGroupProvider =
   return CreateGroupNotifier(
     ref.read(groupRepositoryProvider),
     ref.read(cloudinaryServiceProvider),
+    ref.read(notificationDispatcherProvider),
   );
 });
 

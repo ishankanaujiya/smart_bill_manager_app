@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/notifications/notification_service.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../data/services/session_service.dart';
 import '../../../groups/data/service/cloudinary_service.dart';
@@ -164,6 +165,8 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
 
       await _userRepo.createUser(appUser);
 
+      // Tag this device so OneSignal delivers notifications to the new user.
+      await NotificationService.instance.login(firebaseUser.uid);
       state = AuthActionSuccess(firebaseUser);
       return true;
     } catch (e) {
@@ -197,7 +200,10 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
       }
 
       await _sessionService.setRememberMe(rememberMe);
-      state = AuthActionSuccess((result as AuthSuccess).user);
+      final signedInUser = (result as AuthSuccess).user;
+      // Tag this device so OneSignal delivers to all of the user's devices.
+      await NotificationService.instance.login(signedInUser.uid);
+      state = AuthActionSuccess(signedInUser);
       return true;
     } catch (e) {
       state = AuthActionError(
@@ -247,6 +253,8 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
 
       if (existingUser != null && existingUser.isProfileComplete) {
         // Profile is complete — user can go straight to home.
+        // Tag this device for push notifications.
+        await NotificationService.instance.login(firebaseUser.uid);
         state = AuthActionSuccess(firebaseUser);
         return (success: true, partialUser: null);
       }
@@ -320,6 +328,8 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
 
       await _userRepo.updateUser(updatedUser);
 
+      // Profile is now complete — tag this device for push notifications.
+      await NotificationService.instance.login(partialUser.id);
       state = AuthActionSuccess(_authRepo.currentUser!);
       return true;
     } catch (e) {
@@ -336,6 +346,9 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
   /// starts from the welcome screen.
   Future<void> signOut() async {
     state = const AuthActionLoading();
+    // Remove the OneSignal external_id tag before signing out so this device
+    // no longer receives notifications for the departing user.
+    await NotificationService.instance.logout();
     await _sessionService.clear();
     await _authRepo.signOut();
     state = const AuthActionIdle();
