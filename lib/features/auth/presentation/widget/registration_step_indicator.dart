@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../../app/theme/design_system.dart';
 
-/// Horizontal step indicator for the 4-step registration flow.
+/// Horizontal step indicator for the 3-step registration flow.
 ///
-/// Steps: Details -> Verify -> Profile -> Done.
+/// Steps: Details -> Profile -> Done.
 /// The active step is highlighted with the primary colour and a ring.
 /// Completed previous steps show a checkmark. Future steps are muted.
 ///
@@ -16,10 +16,10 @@ class RegistrationStepIndicator extends StatelessWidget {
     required this.currentStep,
   });
 
-  /// 0-indexed step (0 = Details, 1 = Verify, 2 = Profile, 3 = Done).
+  /// 0-indexed step (0 = Details, 1 = Profile, 2 = Done).
   final int currentStep;
 
-  static const List<String> _labels = ['DETAILS', 'VERIFY', 'PROFILE', 'DONE'];
+  static const List<String> _labels = ['DETAILS', 'PROFILE', 'DONE'];
   static const double _circleSize = 32;
   static const double _lineThickness = 2;
 

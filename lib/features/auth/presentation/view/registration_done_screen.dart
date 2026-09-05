@@ -93,7 +93,7 @@ class _RegistrationDoneScreenState extends State<RegistrationDoneScreen>
                       const SizedBox(height: AppSpacing.md),
 
                       // Step indicator
-                      const RegistrationStepIndicator(currentStep: 3),
+                      const RegistrationStepIndicator(currentStep: 2),
 
                       const SizedBox(height: AppSpacing.xxxl),
 
