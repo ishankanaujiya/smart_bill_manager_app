@@ -14,6 +14,15 @@ abstract class UserRepository {
   /// Returns `null` if no document exists.
   Future<AppUser?> getUser(String uid);
 
+  /// Searches the "Users" collection by email or phone number.
+  ///
+  /// [query] is matched as a prefix against the `email` and `phone_number`
+  /// fields. Returns a list of matching [AppUser]s, excluding the user with
+  /// the given [excludeUid] (the current user).
+  ///
+  /// Results are limited to 10 documents to keep the query fast.
+  Future<List<AppUser>> searchUsers(String query, {String? excludeUid});
+
   /// Updates an existing user document with the fields in [user].
   ///
   /// Only non-null fields are written. The `updated_at` timestamp is

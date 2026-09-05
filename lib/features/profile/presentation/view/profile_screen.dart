@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
+import '../../../auth/presentation/state/auth_providers.dart';
+import '../../../auth/presentation/view/welcome_screen.dart';
 
 /// Profile tab for the app shell.
 ///
 /// Displays the current user summary and profile settings.
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
+class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with TickerProviderStateMixin {
   late final AnimationController _entranceController;
 
@@ -37,6 +40,54 @@ class _ProfileScreenState extends State<ProfileScreen>
   void dispose() {
     _entranceController.dispose();
     super.dispose();
+  }
+
+  /// Handles taps on the profile menu items.
+  ///
+  /// Only the "Sign Out" action is wired up for now — the remaining items
+  /// are placeholders for future settings screens.
+  Future<void> _onMenuItemTap(String label) async {
+    if (label == 'Sign Out') {
+      await _confirmSignOut();
+    }
+  }
+
+  /// Shows a confirmation dialog before signing the user out.
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Sign Out'),
+          content: const Text(
+            'Are you sure you want to sign out of your account?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sign Out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    await ref.read(authActionProvider.notifier).signOut();
+
+    if (!mounted) return;
+
+    // Return to the welcome screen, clearing the app shell from the stack.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const WelcomeScreen()),
+      (route) => false,
+    );
   }
 
   @override
@@ -122,7 +173,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       child: _ProfileMenuTile(
                         icon: item['icon'] as IconData,
                         label: item['label'] as String,
-                        onTap: () {},
+                        onTap: () =>
+                            _onMenuItemTap(item['label'] as String),
                       ),
                     ),
                   );

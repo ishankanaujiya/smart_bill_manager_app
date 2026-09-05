@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/theme/design_system.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
-import 'features/auth/presentation/view/welcome_screen.dart';
+import 'features/auth/presentation/view/auth_gate.dart';
 import 'firebase_options.dart';
 
 /// Global notifier for the app [ThemeMode].
@@ -53,7 +53,7 @@ class SmartBillManagerApp extends StatelessWidget {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: mode,
-          home: const WelcomeScreen(),
+          home: const AuthGate(),
         );
       },
     );
