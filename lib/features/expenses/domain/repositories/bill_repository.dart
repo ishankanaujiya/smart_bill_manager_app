@@ -39,6 +39,53 @@ abstract class BillRepository {
     BillPaymentStatus status,
   );
 
+  /// Streams a single bill document in real time.
+  ///
+  /// Emits a new [Bill] whenever the bill document changes (e.g. when a
+  /// participant submits a payment request or the creator verifies one).
+  /// Returns `null` if the document does not exist.
+  Stream<Bill?> watchBill(String groupId, String billId);
+
+  /// Submits a payment request on behalf of [memberId].
+  ///
+  /// [requestType] indicates whether the participant claims to have paid in
+  /// full ([PaymentRequestType.paid]) or partially
+  /// ([PaymentRequestType.partially]). [requestedAmount] is the amount the
+  /// participant claims to have paid — for a full payment it should equal
+  /// their share, for a partial payment it must be less than their share.
+  ///
+  /// Sets the participant's [ParticipantPaymentStatus] to `requested` and
+  /// records the request timestamp. The bill creator must verify the
+  /// request via [verifyParticipantPayment] before the participant's status
+  /// becomes `paid` or `partially_paid`.
+  Future<void> requestParticipantPayment({
+    required String groupId,
+    required String billId,
+    required String memberId,
+    required PaymentRequestType requestType,
+    required double requestedAmount,
+  });
+
+  /// Verifies (approves or rejects) a participant's payment request.
+  ///
+  /// Only the bill creator should call this. When [approved] is `true`,
+  /// [receivedAmount] is the amount the creator confirms they actually
+  /// received. The participant's status becomes `paid` when the received
+  /// amount equals (or exceeds) their share, otherwise `partially_paid`.
+  /// When [approved] is `false`, the participant's status becomes
+  /// `rejected` and they may submit a new request.
+  ///
+  /// The bill-level [BillPaymentStatus] is recomputed from all
+  /// participants' states after the update.
+  Future<void> verifyParticipantPayment({
+    required String groupId,
+    required String billId,
+    required String memberId,
+    required bool approved,
+    required double receivedAmount,
+    required String verifiedBy,
+  });
+
   /// Deletes a bill document.
   Future<void> deleteBill(String groupId, String billId);
 }

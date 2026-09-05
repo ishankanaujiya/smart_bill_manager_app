@@ -192,3 +192,167 @@ final billsForGroupProvider =
     StreamProvider.family<List<Bill>, String>((ref, groupId) {
   return ref.read(billRepositoryProvider).watchBillsForGroup(groupId);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Single-bill real-time stream
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Streams a single bill document in real time.
+///
+/// Used by [BillDetailsScreen] so that payment requests and verifications
+/// made by other members appear live without needing to reload the screen.
+final billStreamProvider =
+    StreamProvider.family<Bill?, ({String groupId, String billId})>(
+  (ref, params) {
+    return ref
+        .read(billRepositoryProvider)
+        .watchBill(params.groupId, params.billId);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Participant payment request / verification
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// State for participant payment operations (request & verify).
+sealed class PaymentActionState {
+  const PaymentActionState();
+}
+
+class PaymentActionIdle extends PaymentActionState {
+  const PaymentActionIdle();
+}
+
+class PaymentActionLoading extends PaymentActionState {
+  const PaymentActionLoading();
+}
+
+class PaymentActionSuccess extends PaymentActionState {
+  const PaymentActionSuccess(this.message);
+  final String message;
+}
+
+class PaymentActionError extends PaymentActionState {
+  const PaymentActionError(this.message);
+  final String message;
+}
+
+/// Notifier that handles a participant submitting a payment request and the
+/// bill creator verifying (approving / rejecting) a request.
+///
+/// Both flows write to the bill's `participant_payments` map via
+/// [BillRepository]. The real-time [billStreamProvider] picks up the change
+/// and the UI updates automatically.
+class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
+  PaymentActionNotifier(this._billRepo) : super(const PaymentActionIdle());
+
+  final BillRepository _billRepo;
+
+  /// A participant submits a payment request for their own share.
+  ///
+  /// [requestType] is `paid` (full share) or `partially` (partial amount).
+  /// [requestedAmount] should equal the share for a full request, or be
+  /// less than the share for a partial request.
+  Future<bool> requestPayment({
+    required String groupId,
+    required String billId,
+    required String memberId,
+    required PaymentRequestType requestType,
+    required double requestedAmount,
+  }) async {
+    state = const PaymentActionLoading();
+    try {
+      await _billRepo.requestParticipantPayment(
+        groupId: groupId,
+        billId: billId,
+        memberId: memberId,
+        requestType: requestType,
+        requestedAmount: requestedAmount,
+      );
+      state = PaymentActionSuccess(
+        requestType == PaymentRequestType.paid
+            ? 'Payment request submitted. Waiting for verification.'
+            : 'Partial payment request submitted. Waiting for verification.',
+      );
+      return true;
+    } on FirebaseException catch (e) {
+      state = PaymentActionError(
+        switch (e.code) {
+          'permission-denied' =>
+            'You don\'t have permission to update this bill.',
+          'unavailable' => 'Firestore is temporarily unavailable. Try again.',
+          'network-request-failed' =>
+            'Network error. Check your internet connection.',
+          _ => 'Could not submit the request. Please try again.',
+        },
+      );
+      return false;
+    } catch (_) {
+      state = const PaymentActionError(
+        'Could not submit the request. Please try again.',
+      );
+      return false;
+    }
+  }
+
+  /// The bill creator verifies a participant's payment request.
+  ///
+  /// When [approved] is true, [receivedAmount] is the amount the creator
+  /// confirms receiving; the participant's status becomes `paid` if it
+  /// matches their share, otherwise `partially_paid`. When [approved] is
+  /// false, the request is rejected.
+  Future<bool> verifyPayment({
+    required String groupId,
+    required String billId,
+    required String memberId,
+    required bool approved,
+    required double receivedAmount,
+    required String verifiedBy,
+  }) async {
+    state = const PaymentActionLoading();
+    try {
+      await _billRepo.verifyParticipantPayment(
+        groupId: groupId,
+        billId: billId,
+        memberId: memberId,
+        approved: approved,
+        receivedAmount: receivedAmount,
+        verifiedBy: verifiedBy,
+      );
+      state = PaymentActionSuccess(
+        approved
+            ? receivedAmount > 0
+                ? 'Payment verified successfully.'
+                : 'Payment approved.'
+            : 'Payment request rejected.',
+      );
+      return true;
+    } on FirebaseException catch (e) {
+      state = PaymentActionError(
+        switch (e.code) {
+          'permission-denied' =>
+            'You don\'t have permission to verify this payment.',
+          'unavailable' => 'Firestore is temporarily unavailable. Try again.',
+          'network-request-failed' =>
+            'Network error. Check your internet connection.',
+          _ => 'Could not verify the payment. Please try again.',
+        },
+      );
+      return false;
+    } catch (_) {
+      state = const PaymentActionError(
+        'Could not verify the payment. Please try again.',
+      );
+      return false;
+    }
+  }
+
+  /// Resets the state back to idle (e.g. to clear a snackbar).
+  void reset() => state = const PaymentActionIdle();
+}
+
+/// Provider for [PaymentActionNotifier].
+final paymentActionProvider =
+    StateNotifierProvider<PaymentActionNotifier, PaymentActionState>((ref) {
+  return PaymentActionNotifier(ref.read(billRepositoryProvider));
+});

@@ -432,23 +432,32 @@ class _AnimatedCreateBillButton extends StatelessWidget {
                     opacity: contentOpacity,
                     child: Transform.translate(
                       offset: Offset(contentSlideX * 100, 0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            color: colorScheme.primary,
-                            size: 18,
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          Text(
-                            'Create Bill',
-                            style: AppTextStyles.labelLarge.copyWith(
+                      // OverflowBox frees the Row from the animating
+                      // parent width so it always lays out at its natural
+                      // size. The outer ClipRect clips the overflow during
+                      // the expand/collapse transition instead of letting
+                      // the RenderFlex overflow.
+                      child: OverflowBox(
+                        alignment: Alignment.centerRight,
+                        maxWidth: double.infinity,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.arrow_forward_rounded,
                               color: colorScheme.primary,
-                              fontWeight: FontWeight.w700,
+                              size: 18,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: AppSpacing.xxs),
+                            Text(
+                              'Create Bill',
+                              style: AppTextStyles.labelLarge.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

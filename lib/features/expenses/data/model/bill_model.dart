@@ -28,6 +28,7 @@ import '../../domain/entities/bill.dart';
 /// - `payment_qr_urls`    : `Map<String,String>`  (keyed by method name → Cloudinary URL)
 /// - `selected_bank_name` : String?  (bank name when method includes 'bank')
 /// - `payment_id`         : `Map<String,String>`  (keyed by method name → eSewa ID / Khalti ID / bank account number)
+/// - `participant_payments`: `Map<String,Map>`  (keyed by participant UID → per-participant payment state)
 class BillModel {
   const BillModel._({
     required this.id,
@@ -51,6 +52,7 @@ class BillModel {
     this.realExpenseMadeBy,
     this.selectedBankName,
     this.paymentIds = const {},
+    this.participantPayments = const {},
   });
 
   /// Firestore subcollection name — `bills` inside each group document.
@@ -77,6 +79,10 @@ class BillModel {
   final Map<String, String> paymentQrUrls; // method name → Cloudinary URL
   final String? selectedBankName;
   final Map<String, String> paymentIds; // method name → ID / account number
+
+  /// Per-participant payment state, keyed by participant UID. Each value is
+  /// the raw Firestore map shape (see [_participantPaymentToMap]).
+  final Map<String, Map<String, dynamic>> participantPayments;
 
   /// Creates a [BillModel] from a Firestore document.
   factory BillModel.fromDocument(
@@ -111,6 +117,7 @@ class BillModel {
       paymentQrUrls: _parseQrUrlMap(data['payment_qr_urls'], data['payment_methods']),
       selectedBankName: data['selected_bank_name'] as String?,
       paymentIds: _parsePaymentIdMap(data['payment_id'], data['payment_account_id'], data['payment_methods']),
+      participantPayments: _parseParticipantPayments(data['participant_payments']),
     );
   }
 
@@ -147,6 +154,7 @@ class BillModel {
       paymentQrUrls: _parseQrUrlMap(map['payment_qr_urls'], map['payment_methods']),
       selectedBankName: map['selected_bank_name'] as String?,
       paymentIds: _parsePaymentIdMap(map['payment_id'], map['payment_account_id'], map['payment_methods']),
+      participantPayments: _parseParticipantPayments(map['participant_payments']),
     );
   }
 
@@ -176,6 +184,9 @@ class BillModel {
       'payment_qr_urls': paymentQrUrls,
       'selected_bank_name': selectedBankName,
       'payment_id': paymentIds,
+      'participant_payments': participantPayments.map(
+        (key, value) => MapEntry(key, value),
+      ),
     };
   }
 
@@ -207,6 +218,10 @@ class BillModel {
       paymentQrUrls: Map<String, String>.of(paymentQrUrls),
       selectedBankName: selectedBankName,
       paymentIds: Map<String, String>.of(paymentIds),
+      participantPayments: participantPayments.map(
+        (key, value) =>
+            MapEntry(key, _participantPaymentFromMap(value)),
+      ),
     );
   }
 
@@ -236,6 +251,10 @@ class BillModel {
       paymentQrUrls: Map<String, String>.of(bill.paymentQrUrls),
       selectedBankName: bill.selectedBankName,
       paymentIds: Map<String, String>.of(bill.paymentIds),
+      participantPayments: bill.participantPayments.map(
+        (key, value) =>
+            MapEntry(key, _participantPaymentToMap(value)),
+      ),
     );
   }
 
@@ -407,6 +426,97 @@ class BillModel {
       'esewa' => BillPaymentMethod.esewa,
       'khalti' => BillPaymentMethod.khalti,
       'bank' => BillPaymentMethod.bank,
+      _ => null,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Participant payment helpers
+  // ─────────────────────────────────────────────────────────────────────
+
+  /// Parses the `participant_payments` Firestore map into a
+  /// `Map<String, Map<String, dynamic>>` keyed by participant UID.
+  static Map<String, Map<String, dynamic>> _parseParticipantPayments(
+      dynamic value) {
+    if (value is! Map) return {};
+    final result = <String, Map<String, dynamic>>{};
+    value.forEach((k, v) {
+      if (v is Map<String, dynamic>) {
+        result[k.toString()] = Map<String, dynamic>.of(v);
+      } else if (v is Map) {
+        result[k.toString()] =
+            v.map((mk, mv) => MapEntry(mk.toString(), mv));
+      }
+    });
+    return result;
+  }
+
+  /// Converts a stored participant-payment map into a [ParticipantPayment]
+  /// entity.
+  static ParticipantPayment _participantPaymentFromMap(
+      Map<String, dynamic> map) {
+    return ParticipantPayment(
+      status: _participantPaymentStatusFromString(map['status'] as String?),
+      requestType: _paymentRequestTypeFromString(map['request_type'] as String?),
+      requestedAmount:
+          (map['requested_amount'] as num?)?.toDouble() ?? 0.0,
+      amountPaid: (map['amount_paid'] as num?)?.toDouble() ?? 0.0,
+      requestedAt: (map['requested_at'] as Timestamp?)?.toDate(),
+      verifiedAt: (map['verified_at'] as Timestamp?)?.toDate(),
+      verifiedBy: map['verified_by'] as String?,
+    );
+  }
+
+  /// Converts a [ParticipantPayment] entity into a Firestore-compatible map.
+  static Map<String, dynamic> _participantPaymentToMap(
+      ParticipantPayment payment) {
+    return {
+      'status': _participantPaymentStatusToString(payment.status),
+      if (payment.requestType != null)
+        'request_type': _paymentRequestTypeToString(payment.requestType!),
+      'requested_amount': payment.requestedAmount,
+      'amount_paid': payment.amountPaid,
+      if (payment.requestedAt != null)
+        'requested_at': Timestamp.fromDate(payment.requestedAt!),
+      if (payment.verifiedAt != null)
+        'verified_at': Timestamp.fromDate(payment.verifiedAt!),
+      if (payment.verifiedBy != null) 'verified_by': payment.verifiedBy,
+    };
+  }
+
+  static String _participantPaymentStatusToString(
+      ParticipantPaymentStatus status) {
+    return switch (status) {
+      ParticipantPaymentStatus.unpaid => 'unpaid',
+      ParticipantPaymentStatus.requested => 'requested',
+      ParticipantPaymentStatus.partiallyPaid => 'partially_paid',
+      ParticipantPaymentStatus.paid => 'paid',
+      ParticipantPaymentStatus.rejected => 'rejected',
+    };
+  }
+
+  static ParticipantPaymentStatus _participantPaymentStatusFromString(
+      String? value) {
+    return switch (value) {
+      'requested' => ParticipantPaymentStatus.requested,
+      'partially_paid' => ParticipantPaymentStatus.partiallyPaid,
+      'paid' => ParticipantPaymentStatus.paid,
+      'rejected' => ParticipantPaymentStatus.rejected,
+      _ => ParticipantPaymentStatus.unpaid,
+    };
+  }
+
+  static String _paymentRequestTypeToString(PaymentRequestType type) {
+    return switch (type) {
+      PaymentRequestType.paid => 'paid',
+      PaymentRequestType.partially => 'partially',
+    };
+  }
+
+  static PaymentRequestType? _paymentRequestTypeFromString(String? value) {
+    return switch (value) {
+      'paid' => PaymentRequestType.paid,
+      'partially' => PaymentRequestType.partially,
       _ => null,
     };
   }

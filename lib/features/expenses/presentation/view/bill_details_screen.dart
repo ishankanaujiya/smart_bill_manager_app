@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../domain/entities/bill.dart';
+import '../../presentation/state/bill_providers.dart';
 
 /// Full-screen bill details view.
 ///
@@ -9,10 +12,17 @@ import '../../domain/entities/bill.dart';
 /// as a standalone screen — showing the gradient summary card, receipt
 /// photo (if any), split mode, and the full participant breakdown.
 ///
+/// Each included participant can mark their own share as "Paid" or
+/// "Partially paid". The request is sent to the bill creator (identified
+/// by the bill's `created_by` field), who must verify it before the
+/// participant's [ParticipantPaymentStatus] is finalized. The screen
+/// watches the bill document in real time so requests and verifications
+/// made by other members appear live.
+///
 /// Shows a brief skeleton loading shimmer on entry before revealing the
 /// content, giving a smooth transition when navigating from the group
 /// details bill list.
-class BillDetailsScreen extends StatefulWidget {
+class BillDetailsScreen extends ConsumerStatefulWidget {
   const BillDetailsScreen({
     super.key,
     required this.bill,
@@ -23,12 +33,14 @@ class BillDetailsScreen extends StatefulWidget {
   final String currentUserId;
 
   @override
-  State<BillDetailsScreen> createState() => _BillDetailsScreenState();
+  ConsumerState<BillDetailsScreen> createState() =>
+      _BillDetailsScreenState();
 }
 
-class _BillDetailsScreenState extends State<BillDetailsScreen>
+class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
     with TickerProviderStateMixin {
   late final AnimationController _shimmerController;
+  late final AnimationController _hintController;
   bool _isLoading = true;
 
   static const _loadingDuration = Duration(milliseconds: 400);
@@ -40,6 +52,14 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
+
+    // Gentle, repeating nudge animation for the "tap to update" hint
+    // pointer next to the Status column header. Loops with a pause between
+    // each nudge so it feels alive without being distracting.
+    _hintController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
 
     _startLoading();
   }
@@ -54,6 +74,7 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
   @override
   void dispose() {
     _shimmerController.dispose();
+    _hintController.dispose();
     super.dispose();
   }
 
@@ -71,6 +92,37 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
+    // Watch the live bill stream so payment requests and verifications
+    // made by other members appear in real time. Fall back to the bill
+    // passed into the widget until the stream emits its first value.
+    final billAsync = ref.watch(billStreamProvider(
+      (groupId: widget.bill.groupId, billId: widget.bill.id),
+    ));
+    final bill = billAsync.valueOrNull ?? widget.bill;
+
+    // Surface payment action outcomes (success / error) as snackbars.
+    ref.listen<PaymentActionState>(paymentActionProvider, (_, next) {
+      if (next is PaymentActionSuccess) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(next.message),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ));
+        ref.read(paymentActionProvider.notifier).reset();
+      } else if (next is PaymentActionError) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(next.message),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ));
+        ref.read(paymentActionProvider.notifier).reset();
+      }
+    });
+
     return Scaffold(
       body: SafeArea(
         child: AnimatedSwitcher(
@@ -86,7 +138,7 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
                 )
               : KeyedSubtree(
                   key: const ValueKey('content'),
-                  child: _buildContent(context, colorScheme, isDark),
+                  child: _buildContent(context, colorScheme, isDark, bill),
                 ),
         ),
       ),
@@ -97,10 +149,20 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
     BuildContext context,
     ColorScheme colorScheme,
     bool isDark,
+    Bill bill,
   ) {
-    final bill = widget.bill;
     final included = bill.includedParticipants;
     final date = bill.date ?? bill.createdAt;
+    final isCreator = widget.currentUserId == bill.createdBy;
+    // Whether at least one row offers a tappable status (the current user
+    // has an unpaid/rejected share). Drives the animated "tap to update"
+    // hint pointer next to the Status column header.
+    final hasTappableStatus = included.any((p) {
+      if (p.id != widget.currentUserId) return false;
+      final s = bill.paymentFor(p.id).status;
+      return s == ParticipantPaymentStatus.unpaid ||
+          s == ParticipantPaymentStatus.rejected;
+    });
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(
@@ -250,6 +312,35 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
               ),
               const SizedBox(height: AppSpacing.xl),
 
+              // ── Verification requests (creator only) ──────────────────
+              // Placed right below the main summary card so the bill
+              // creator sees pending approvals prominently, before the
+              // receipt photo, payment methods, and split breakdown.
+              if (isCreator &&
+                  bill.pendingVerificationParticipants.isNotEmpty) ...[
+                _StaggeredFadeIn(
+                  delay: const Duration(milliseconds: 80),
+                  child: _VerificationSection(
+                    bill: bill,
+                    currentUserId: widget.currentUserId,
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    onVerify: ({
+                      required participantId,
+                      required approved,
+                      required receivedAmount,
+                    }) =>
+                        _verifyRequest(
+                      bill: bill,
+                      participantId: participantId,
+                      approved: approved,
+                      receivedAmount: receivedAmount,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+
               // ── Receipt photo (if present) ────────────────────────────
               if (bill.receiptPhotoUrl != null &&
                   bill.receiptPhotoUrl!.isNotEmpty) ...[
@@ -368,6 +459,30 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
                               color: colorScheme.onSurfaceVariant,
                             ),
                           ),
+                          const SizedBox(width: AppSpacing.sm),
+                          SizedBox(
+                            width: 72,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                if (hasTappableStatus)
+                                  _StatusHintPointer(
+                                    controller: _hintController,
+                                    color: colorScheme.primary,
+                                  )
+                                else
+                                  const SizedBox(width: 14),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'Status',
+                                  style: AppTextStyles.labelSmall.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                  textAlign: TextAlign.end,
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -383,7 +498,14 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
                         share: bill.splitMode == BillSplitMode.equal
                             ? bill.perPersonShare
                             : included[i].customShare,
+                        payment: bill.paymentFor(included[i].id),
+                        isCurrentUserRow:
+                            included[i].id == widget.currentUserId,
                         colorScheme: colorScheme,
+                        onMarkPayment: () => _showPaymentActionSheet(
+                          bill: bill,
+                          participant: included[i],
+                        ),
                       ),
                       if (i < included.length - 1)
                         Divider(
@@ -451,6 +573,133 @@ class _BillDetailsScreenState extends State<BillDetailsScreen>
         ),
       ],
     );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Payment action helpers
+  // ─────────────────────────────────────────────────────────────────────
+
+  /// Opens a bottom sheet letting the current user mark their own share as
+  /// "Paid in full" or "Partially paid".
+  ///
+  /// Every member — including the bill creator — submits a verification
+  /// request. The request appears in the bill creator's "Payment
+  /// Verifications" section, where the creator approves or rejects it
+  /// (their own request included), keeping the flow uniform for all.
+  void _showPaymentActionSheet({
+    required Bill bill,
+    required BillParticipant participant,
+  }) {
+    final share = bill.splitMode == BillSplitMode.equal
+        ? bill.perPersonShare
+        : participant.customShare;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (context) => _PaymentActionSheet(
+        participantName: participant.bestDisplayName,
+        share: share,
+        onPaid: () {
+          Navigator.of(context).pop();
+          _submitPaidRequest(bill, participant, share);
+        },
+        onPartially: () {
+          Navigator.of(context).pop();
+          _showPartialAmountDialog(
+            bill: bill,
+            participant: participant,
+            share: share,
+          );
+        },
+      ),
+    );
+  }
+
+  /// Submits a "paid in full" request for [participant]'s share.
+  ///
+  /// Every participant — including the bill creator — submits a request
+  /// that lands in the bill creator's "Payment Verifications" section.
+  /// The creator then approves/rejects it (their own request included),
+  /// keeping the verification flow uniform for all members.
+  Future<void> _submitPaidRequest(
+    Bill bill,
+    BillParticipant participant,
+    double share,
+  ) async {
+    await ref.read(paymentActionProvider.notifier).requestPayment(
+          groupId: bill.groupId,
+          billId: bill.id,
+          memberId: participant.id,
+          requestType: PaymentRequestType.paid,
+          requestedAmount: share,
+        );
+  }
+
+  /// Opens a dialog where the user enters the partial amount they have paid.
+  ///
+  /// Validators enforce:
+  /// - The amount must be greater than zero.
+  /// - The amount must not exceed the assigned share.
+  /// - The amount must not equal the assigned share (since the user chose
+  ///   the "partially paid" option, they cannot enter the full amount).
+  void _showPartialAmountDialog({
+    required Bill bill,
+    required BillParticipant participant,
+    required double share,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => _PartialPaymentDialog(
+        participantName: participant.bestDisplayName,
+        share: share,
+        onSubmit: (amount) {
+          Navigator.of(context).pop();
+          _submitPartialRequest(bill, participant, amount);
+        },
+      ),
+    );
+  }
+
+  /// Submits a "partially paid" request for [participant] with the entered
+  /// [amount]. Like [_submitPaidRequest], this always creates a
+  /// verification request — even when the current user is the bill creator.
+  Future<void> _submitPartialRequest(
+    Bill bill,
+    BillParticipant participant,
+    double amount,
+  ) async {
+    await ref.read(paymentActionProvider.notifier).requestPayment(
+          groupId: bill.groupId,
+          billId: bill.id,
+          memberId: participant.id,
+          requestType: PaymentRequestType.partially,
+          requestedAmount: amount,
+        );
+  }
+
+  /// The bill creator verifies (approves or rejects) a participant's
+  /// pending payment request. Approval opens a dialog to confirm the
+  /// amount actually received.
+  Future<void> _verifyRequest({
+    required Bill bill,
+    required String participantId,
+    required bool approved,
+    required double receivedAmount,
+  }) async {
+    await ref.read(paymentActionProvider.notifier).verifyPayment(
+          groupId: bill.groupId,
+          billId: bill.id,
+          memberId: participantId,
+          approved: approved,
+          receivedAmount: receivedAmount,
+          verifiedBy: widget.currentUserId,
+        );
   }
 }
 
@@ -711,62 +960,163 @@ class _PaymentStatusPill extends StatelessWidget {
 // Participant row
 // ═════════════════════════════════════════════════════════════════════════════
 
-class _ParticipantRow extends StatelessWidget {
+class _ParticipantRow extends StatefulWidget {
   const _ParticipantRow({
     required this.participant,
     required this.share,
+    required this.payment,
+    required this.isCurrentUserRow,
     required this.colorScheme,
+    required this.onMarkPayment,
   });
 
   final BillParticipant participant;
   final double share;
+  final ParticipantPayment payment;
+  final bool isCurrentUserRow;
   final ColorScheme colorScheme;
+  final VoidCallback onMarkPayment;
+
+  @override
+  State<_ParticipantRow> createState() => _ParticipantRowState();
+}
+
+class _ParticipantRowState extends State<_ParticipantRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+      lowerBound: 0.94,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  bool get _canMark =>
+      widget.isCurrentUserRow &&
+      (widget.payment.status == ParticipantPaymentStatus.unpaid ||
+          widget.payment.status == ParticipantPaymentStatus.rejected);
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = widget.colorScheme;
+    final payment = widget.payment;
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.md,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ParticipantAvatar(
-            participant: participant,
-            colorScheme: colorScheme,
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  participant.bestDisplayName,
-                  style: AppTextStyles.titleSmall.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (participant.isCurrentUser)
-                  Text(
-                    'You',
-                    style: AppTextStyles.caption.copyWith(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w600,
+          Row(
+            children: [
+              _ParticipantAvatar(
+                participant: widget.participant,
+                colorScheme: colorScheme,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.participant.bestDisplayName,
+                      style: AppTextStyles.titleSmall.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-              ],
-            ),
+                    if (widget.participant.isCurrentUser)
+                      Text(
+                        'You',
+                        style: AppTextStyles.caption.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Text(
+                AppConstants.formatCurrency(widget.share, withSymbol: true),
+                style: AppTextStyles.amountSmall.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              SizedBox(
+                width: 72,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _canMark
+                      ? ScaleTransition(
+                          scale: _press,
+                          child: GestureDetector(
+                            onTapDown: (_) => _press.reverse(),
+                            onTapUp: (_) {
+                              _press.forward();
+                              widget.onMarkPayment();
+                            },
+                            onTapCancel: () => _press.forward(),
+                            child: _PaymentStatusBadge(
+                              status: payment.status,
+                              colorScheme: colorScheme,
+                              tappable: true,
+                            ),
+                          ),
+                        )
+                      : _PaymentStatusBadge(
+                          status: payment.status,
+                          colorScheme: colorScheme,
+                          tappable: false,
+                        ),
+                ),
+              ),
+            ],
           ),
-          Text(
-            AppConstants.formatCurrency(share, withSymbol: true),
-            style: AppTextStyles.amountSmall.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
+          // If partially paid, show the verified amount below the row.
+          if (payment.status == ParticipantPaymentStatus.partiallyPaid) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.xl + 36),
+              child: Text(
+                'Paid: ${AppConstants.formatCurrency(payment.amountPaid, withSymbol: true)}'
+                ' • Remaining: ${AppConstants.formatCurrency(widget.share - payment.amountPaid, withSymbol: true)}',
+                style: AppTextStyles.caption.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
             ),
-          ),
+          ],
+          // Hint for the current user's own unpaid/rejected row.
+          if (_canMark) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.xl + 36),
+              child: Text(
+                'Tap the status to mark your payment',
+                style: AppTextStyles.caption.copyWith(
+                  color: colorScheme.primary.withValues(alpha: 0.7),
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1562,4 +1912,963 @@ Widget _qrFlightShuttleBuilder(
         ? toHeroContext.widget
         : fromHeroContext.widget,
   );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Animated "tap to update" hint pointer (Status column header)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A small, gently bouncing pointer icon placed next to the "Status" column
+/// header. Its repeating nudge animation hints to the user that the status
+/// badges in that column are tappable.
+class _StatusHintPointer extends StatelessWidget {
+  const _StatusHintPointer({
+    required this.controller,
+    required this.color,
+  });
+
+  final AnimationController controller;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    // The pointer slides left ↔ right and fades slightly, like a finger
+    // nudging toward the status badges.
+    final nudge = Tween<double>(begin: -3.0, end: 3.0).animate(
+      CurvedAnimation(
+        parent: controller,
+        curve: Curves.easeInOutSine,
+      ),
+    );
+    final fade = Tween<double>(begin: 0.45, end: 1.0).animate(
+      CurvedAnimation(
+        parent: controller,
+        curve: Curves.easeInOutSine,
+      ),
+    );
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        return Opacity(
+          opacity: fade.value,
+          child: Transform.translate(
+            offset: Offset(nudge.value, 0),
+            child: Icon(
+              Icons.touch_app_rounded,
+              size: 13,
+              color: color,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Per-participant payment status badge
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A compact pill showing a participant's [ParticipantPaymentStatus].
+///
+/// When [tappable] is true, the badge is rendered with a slightly stronger
+/// fill, a small leading dot, and a dashed outline to communicate that it
+/// is an interactive affordance (tapping it opens the mark-payment sheet).
+class _PaymentStatusBadge extends StatelessWidget {
+  const _PaymentStatusBadge({
+    required this.status,
+    required this.colorScheme,
+    this.tappable = false,
+  });
+
+  final ParticipantPaymentStatus status;
+  final ColorScheme colorScheme;
+  final bool tappable;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color) = switch (status) {
+      ParticipantPaymentStatus.paid =>
+        ('Paid', colorScheme.primary),
+      ParticipantPaymentStatus.partiallyPaid =>
+        ('Partial', const Color(0xFFE0A800)),
+      ParticipantPaymentStatus.requested =>
+        ('Pending', colorScheme.tertiary),
+      ParticipantPaymentStatus.rejected =>
+        ('Rejected', colorScheme.error),
+      ParticipantPaymentStatus.unpaid =>
+        ('Unpaid', colorScheme.onSurfaceVariant),
+    };
+
+    final fillAlpha = tappable ? 0.18 : 0.12;
+    final borderAlpha = tappable ? 0.55 : 0.3;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: fillAlpha),
+        borderRadius: AppRadius.radiusFull,
+        border: Border.all(
+          color: color.withValues(alpha: borderAlpha),
+          width: tappable ? 0.8 : 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (tappable) ...[
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: AppTextStyles.labelSmall.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 9,
+              height: 1.2,
+            ),
+            textAlign: TextAlign.end,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Payment action bottom sheet (Paid / Partially)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Bottom sheet shown when a participant taps their status badge. Offers
+/// two options: pay in full, or pay a partial amount.
+///
+/// The sheet is laid out with a gradient header card summarizing the share,
+/// followed by two tappable option rows with leading icons, titles, and
+/// descriptive subtitles. A footer note explains that the bill creator
+/// will verify the request.
+class _PaymentActionSheet extends StatelessWidget {
+  const _PaymentActionSheet({
+    required this.participantName,
+    required this.share,
+    required this.onPaid,
+    required this.onPartially,
+  });
+
+  final String participantName;
+  final double share;
+  final VoidCallback onPaid;
+  final VoidCallback onPartially;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.md,
+          AppSpacing.xl,
+          AppSpacing.xl,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Drag handle.
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+                decoration: BoxDecoration(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                  borderRadius: AppRadius.radiusFull,
+                ),
+              ),
+            ),
+
+            // Header: icon + title.
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: cs.primary.withValues(alpha: 0.12),
+                    borderRadius: AppRadius.radiusMd,
+                  ),
+                  child: Icon(
+                    Icons.payments_outlined,
+                    size: 20,
+                    color: cs.primary,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mark Your Payment',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'Tell the bill creator what you paid',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+
+            // Share summary card.
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isDark
+                      ? AppColors.darkPrimaryGradient.colors
+                      : AppColors.lightPrimaryGradient.colors,
+                ),
+                borderRadius: AppRadius.radiusLg,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Your Share',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: cs.onPrimary.withValues(alpha: 0.8),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        AppConstants.formatCurrency(share, withSymbol: true),
+                        style: AppTextStyles.amountMedium.copyWith(
+                          color: cs.onPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Icon(
+                    Icons.account_balance_wallet_rounded,
+                    color: cs.onPrimary.withValues(alpha: 0.85),
+                    size: 28,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+
+            // Option: Paid in full.
+            _PaymentOptionTile(
+              icon: Icons.check_circle_rounded,
+              iconColor: cs.primary,
+              tint: cs.primary,
+              title: 'Paid in full',
+              subtitle:
+                  'I have paid ${AppConstants.formatCurrency(share, withSymbol: true)}',
+              onTap: onPaid,
+              isDark: isDark,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+
+            // Option: Partially paid.
+            _PaymentOptionTile(
+              icon: Icons.pie_chart_rounded,
+              iconColor: const Color(0xFFE0A800),
+              tint: const Color(0xFFE0A800),
+              title: 'Partially paid',
+              subtitle: 'I have paid part of my share',
+              onTap: onPartially,
+              isDark: isDark,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+
+            // Footer note.
+            Row(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 13,
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'The bill creator will verify your payment before it is '
+                    'confirmed.',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A single tappable option row inside [_PaymentActionSheet].
+class _PaymentOptionTile extends StatefulWidget {
+  const _PaymentOptionTile({
+    required this.icon,
+    required this.iconColor,
+    required this.tint,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    required this.isDark,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final Color tint;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool isDark;
+
+  @override
+  State<_PaymentOptionTile> createState() => _PaymentOptionTileState();
+}
+
+class _PaymentOptionTileState extends State<_PaymentOptionTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+      lowerBound: 0.97,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ScaleTransition(
+      scale: _press,
+      child: GestureDetector(
+        onTapDown: (_) => _press.reverse(),
+        onTapUp: (_) {
+          _press.forward();
+          widget.onTap();
+        },
+        onTapCancel: () => _press.forward(),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.md,
+          ),
+          decoration: BoxDecoration(
+            color: widget.tint.withValues(alpha: widget.isDark ? 0.08 : 0.06),
+            borderRadius: AppRadius.radiusLg,
+            border: Border.all(
+              color: widget.tint.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: cs.surface.withValues(alpha: 0.85),
+                  borderRadius: AppRadius.radiusMd,
+                  border: Border.all(
+                    color: widget.tint.withValues(alpha: 0.25),
+                    width: 0.8,
+                  ),
+                ),
+                child: Icon(widget.icon, size: 20, color: widget.iconColor),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.title,
+                      style: AppTextStyles.titleSmall.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.subtitle,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Partial amount dialog (with validators)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Dialog where the user enters the partial amount they have paid.
+///
+/// Validators enforce:
+/// - The amount must be greater than zero.
+/// - The amount must not exceed the assigned share.
+/// - The amount must not equal the assigned share (since the user chose the
+///   "partially paid" option, they cannot enter the full amount).
+class _PartialPaymentDialog extends StatefulWidget {
+  const _PartialPaymentDialog({
+    required this.participantName,
+    required this.share,
+    required this.onSubmit,
+  });
+
+  final String participantName;
+  final double share;
+  final ValueChanged<double> onSubmit;
+
+  @override
+  State<_PartialPaymentDialog> createState() => _PartialPaymentDialogState();
+}
+
+class _PartialPaymentDialogState extends State<_PartialPaymentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _controller = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String? _validate(String? value) {
+    final raw = (value ?? '').trim();
+    if (raw.isEmpty) return 'Please enter an amount.';
+    final amount = double.tryParse(raw);
+    if (amount == null) return 'Please enter a valid number.';
+    if (amount <= 0) return 'Amount must be greater than zero.';
+    final share = widget.share;
+    if (amount > share + 0.005) {
+      return 'Amount cannot exceed your share of '
+          '${AppConstants.formatCurrency(share, withSymbol: true)}.';
+    }
+    // The user explicitly chose "partially paid", so the amount must not
+    // equal the full share.
+    if ((share - amount).abs() <= 0.005) {
+      return 'You selected "Partially paid". The amount cannot equal your '
+          'full share. Use "Paid in full" instead.';
+    }
+    return null;
+  }
+
+  void _submit() {
+    final error = _validate(_controller.text);
+    if (error != null) {
+      setState(() => _errorText = error);
+      return;
+    }
+    final amount = double.parse(_controller.text.trim());
+    widget.onSubmit(amount);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.radiusXl),
+      title: const Text('Partial Payment'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${widget.participantName} owes '
+              '${AppConstants.formatCurrency(widget.share, withSymbol: true)}',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Enter the amount you have paid:',
+              style: AppTextStyles.labelMedium.copyWith(
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextFormField(
+              controller: _controller,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                  RegExp(r'^\d*\.?\d{0,2}$'),
+                ),
+              ],
+              decoration: InputDecoration(
+                prefixText: '${AppConstants.currencySymbol} ',
+                errorText: _errorText,
+                border: const OutlineInputBorder(),
+                hintText: '0.00',
+              ),
+              autofocus: true,
+              onChanged: (_) {
+                if (_errorText != null) {
+                  setState(() => _errorText = null);
+                }
+              },
+              onFieldSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Submit'),
+        ),
+      ],
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Verification section (bill creator only)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Section shown only to the bill creator. Lists every participant whose
+/// payment request is pending verification, with Approve / Reject actions.
+///
+/// Approving opens a confirmation dialog where the creator enters the
+/// amount they actually received (defaulting to the requested amount).
+/// The participant's status becomes `paid` if the received amount equals
+/// their share, otherwise `partially_paid`.
+class _VerificationSection extends StatelessWidget {
+  const _VerificationSection({
+    required this.bill,
+    required this.currentUserId,
+    required this.colorScheme,
+    required this.isDark,
+    required this.onVerify,
+  });
+
+  final Bill bill;
+  final String currentUserId;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final void Function({
+    required String participantId,
+    required bool approved,
+    required double receivedAmount,
+  }) onVerify;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = bill.pendingVerificationParticipants;
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.tertiaryContainer.withValues(alpha: isDark ? 0.18 : 0.25),
+        borderRadius: AppRadius.radiusXxl,
+        border: Border.all(
+          color: colorScheme.tertiary.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.sm,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.verified_user_rounded,
+                  size: 18,
+                  color: colorScheme.tertiary,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Payment Verifications',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.tertiary.withValues(alpha: 0.15),
+                    borderRadius: AppRadius.radiusFull,
+                  ),
+                  child: Text(
+                    '${pending.length}',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: colorScheme.tertiary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(
+            height: 1,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+          for (int i = 0; i < pending.length; i++) ...[
+            _VerificationRow(
+              bill: bill,
+              participant: pending[i],
+              colorScheme: colorScheme,
+              onApprove: () => _confirmApprove(context, pending[i].id),
+              onReject: () => onVerify(
+                participantId: pending[i].id,
+                approved: false,
+                receivedAmount: 0.0,
+              ),
+            ),
+            if (i < pending.length - 1)
+              Divider(
+                height: 1,
+                indent: AppSpacing.xl + 36,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Opens a dialog where the creator confirms the amount they received
+  /// before approving the participant's request.
+  void _confirmApprove(BuildContext context, String participantId) {
+    final participant = bill.participants
+        .cast<BillParticipant?>()
+        .firstWhere((p) => p?.id == participantId, orElse: () => null);
+    if (participant == null) return;
+    final share = bill.splitMode == BillSplitMode.equal
+        ? bill.perPersonShare
+        : participant.customShare;
+    final requested = bill.paymentFor(participantId).requestedAmount;
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => _ConfirmReceiptDialog(
+        participantName: participant.bestDisplayName,
+        share: share,
+        requestedAmount: requested,
+        onConfirm: (received) => onVerify(
+          participantId: participantId,
+          approved: true,
+          receivedAmount: received,
+        ),
+      ),
+    );
+  }
+}
+
+/// A single pending-verification row with Approve / Reject buttons.
+class _VerificationRow extends StatelessWidget {
+  const _VerificationRow({
+    required this.bill,
+    required this.participant,
+    required this.colorScheme,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final Bill bill;
+  final BillParticipant participant;
+  final ColorScheme colorScheme;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final payment = bill.paymentFor(participant.id);
+    final share = bill.splitMode == BillSplitMode.equal
+        ? bill.perPersonShare
+        : participant.customShare;
+    final isPartialRequest =
+        payment.requestType == PaymentRequestType.partially;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _ParticipantAvatar(
+                participant: participant,
+                colorScheme: colorScheme,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      participant.bestDisplayName,
+                      style: AppTextStyles.titleSmall.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      isPartialRequest
+                          ? 'Requests partial payment of '
+                              '${AppConstants.formatCurrency(payment.requestedAmount, withSymbol: true)} '
+                              '(share: ${AppConstants.formatCurrency(share, withSymbol: true)})'
+                          : 'Requests full payment of '
+                              '${AppConstants.formatCurrency(share, withSymbol: true)}',
+                      style: AppTextStyles.caption.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: onReject,
+                style: TextButton.styleFrom(
+                  foregroundColor: colorScheme.error,
+                ),
+                child: const Text('Reject'),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              FilledButton.icon(
+                onPressed: onApprove,
+                icon: const Icon(Icons.check_rounded, size: 16),
+                label: const Text('Approve'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                  ),
+                  minimumSize: const Size(0, 36),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Confirm receipt dialog (creator enters the amount they received)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Dialog where the bill creator confirms the amount they actually received
+/// from a participant before approving the request.
+///
+/// Defaults to the participant's requested amount. The creator can adjust
+/// it (e.g. if the participant claimed more than they sent). The
+/// participant's final status is computed from the received amount:
+/// `paid` if it equals their share, otherwise `partially_paid`.
+class _ConfirmReceiptDialog extends StatefulWidget {
+  const _ConfirmReceiptDialog({
+    required this.participantName,
+    required this.share,
+    required this.requestedAmount,
+    required this.onConfirm,
+  });
+
+  final String participantName;
+  final double share;
+  final double requestedAmount;
+  final ValueChanged<double> onConfirm;
+
+  @override
+  State<_ConfirmReceiptDialog> createState() => _ConfirmReceiptDialogState();
+}
+
+class _ConfirmReceiptDialogState extends State<_ConfirmReceiptDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.requestedAmount.toStringAsFixed(2),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String? _validate(String? value) {
+    final raw = (value ?? '').trim();
+    if (raw.isEmpty) return 'Please enter an amount.';
+    final amount = double.tryParse(raw);
+    if (amount == null) return 'Please enter a valid number.';
+    if (amount < 0) return 'Amount cannot be negative.';
+    if (amount > widget.share + 0.005) {
+      return 'Amount cannot exceed their share of '
+          '${AppConstants.formatCurrency(widget.share, withSymbol: true)}.';
+    }
+    return null;
+  }
+
+  void _confirm() {
+    final error = _validate(_controller.text);
+    if (error != null) {
+      setState(() => _errorText = error);
+      return;
+    }
+    final amount = double.parse(_controller.text.trim());
+    widget.onConfirm(amount);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.radiusXl),
+      title: const Text('Confirm Receipt'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${widget.participantName} requested '
+            '${AppConstants.formatCurrency(widget.requestedAmount, withSymbol: true)} '
+            '(share: ${AppConstants.formatCurrency(widget.share, withSymbol: true)})',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Enter the amount you received:',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: cs.onSurface,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            controller: _controller,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(
+                RegExp(r'^\d*\.?\d{0,2}$'),
+              ),
+            ],
+            decoration: InputDecoration(
+              prefixText: '${AppConstants.currencySymbol} ',
+              errorText: _errorText,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: (_) {
+              if (_errorText != null) {
+                setState(() => _errorText = null);
+              }
+            },
+            onSubmitted: (_) => _confirm(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _confirm,
+          child: const Text('Confirm'),
+        ),
+      ],
+    );
+  }
 }

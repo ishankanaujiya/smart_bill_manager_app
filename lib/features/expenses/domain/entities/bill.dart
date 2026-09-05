@@ -19,6 +19,119 @@ enum BillPaymentStatus {
   paid,
 }
 
+/// The per-participant payment state within a bill.
+///
+/// Each included participant can mark themselves as having paid (in full or
+/// partially). Their claim is then verified by the bill creator before the
+/// participant's [ParticipantPaymentStatus] is finalized.
+enum ParticipantPaymentStatus {
+  /// No payment request has been made yet.
+  unpaid,
+
+  /// The participant has submitted a payment request and is awaiting
+  /// verification by the bill creator.
+  requested,
+
+  /// The bill creator verified a partial payment (less than the share).
+  partiallyPaid,
+
+  /// The bill creator verified the full share has been paid.
+  paid,
+
+  /// The bill creator rejected the participant's payment request. The
+  /// participant may submit a new request.
+  rejected,
+}
+
+/// The kind of payment request a participant submits.
+enum PaymentRequestType {
+  /// The participant claims to have paid their full share.
+  paid,
+
+  /// The participant claims to have paid part of their share.
+  partially,
+}
+
+/// A single participant's payment state within a bill.
+///
+/// Tracks the participant's submitted payment request (full or partial) and
+/// the bill creator's verification of it. Stored on the bill document in
+/// Firestore under the `participant_payments` map, keyed by participant UID.
+class ParticipantPayment {
+  const ParticipantPayment({
+    this.status = ParticipantPaymentStatus.unpaid,
+    this.requestType,
+    this.requestedAmount = 0.0,
+    this.amountPaid = 0.0,
+    this.requestedAt,
+    this.verifiedAt,
+    this.verifiedBy,
+  });
+
+  /// Current verification state of this participant's payment.
+  final ParticipantPaymentStatus status;
+
+  /// The kind of request the participant submitted (`paid` or `partially`).
+  /// `null` when no request has been made.
+  final PaymentRequestType? requestType;
+
+  /// The amount the participant claims to have paid. For a `paid` request
+  /// this equals the participant's share; for a `partially` request it is
+  /// the partial amount they entered.
+  final double requestedAmount;
+
+  /// The amount the bill creator confirmed they actually received. Only set
+  /// after a successful verification.
+  final double amountPaid;
+
+  /// When the participant submitted their most recent request.
+  final DateTime? requestedAt;
+
+  /// When the bill creator verified (approved or rejected) the request.
+  final DateTime? verifiedAt;
+
+  /// UID of the bill creator who verified the request.
+  final String? verifiedBy;
+
+  /// Whether this participant still owes money (i.e. is not fully paid).
+  bool get isOutstanding =>
+      status != ParticipantPaymentStatus.paid;
+
+  /// Whether the participant currently has a pending verification request.
+  bool get isPending => status == ParticipantPaymentStatus.requested;
+
+  /// Creates a copy of this payment with the given fields replaced.
+  ParticipantPayment copyWith({
+    ParticipantPaymentStatus? status,
+    Object? requestType = _kPaymentSentinel,
+    double? requestedAmount,
+    double? amountPaid,
+    Object? requestedAt = _kPaymentSentinel,
+    Object? verifiedAt = _kPaymentSentinel,
+    Object? verifiedBy = _kPaymentSentinel,
+  }) {
+    return ParticipantPayment(
+      status: status ?? this.status,
+      requestType: requestType == _kPaymentSentinel
+          ? this.requestType
+          : requestType as PaymentRequestType?,
+      requestedAmount: requestedAmount ?? this.requestedAmount,
+      amountPaid: amountPaid ?? this.amountPaid,
+      requestedAt: requestedAt == _kPaymentSentinel
+          ? this.requestedAt
+          : requestedAt as DateTime?,
+      verifiedAt: verifiedAt == _kPaymentSentinel
+          ? this.verifiedAt
+          : verifiedAt as DateTime?,
+      verifiedBy: verifiedBy == _kPaymentSentinel
+          ? this.verifiedBy
+          : verifiedBy as String?,
+    );
+  }
+}
+
+const Object _kPaymentSentinel = Object();
+
 /// A single participant's data within a bill.
 ///
 /// This is a lightweight snapshot of the group member's profile at the time
@@ -137,6 +250,7 @@ class Bill {
     this.paymentQrUrls = const {},
     this.selectedBankName,
     this.paymentIds = const {},
+    this.participantPayments = const {},
   });
 
   /// Firestore document ID of the bill (auto-generated on create).
@@ -214,6 +328,12 @@ class Bill {
   /// Example: `{'esewa': '9812345678', 'bank': '123456789012'}`
   final Map<String, String> paymentIds;
 
+  /// Per-participant payment state, keyed by participant UID. Tracks each
+  /// included participant's payment request and the bill creator's
+  /// verification of it. Participants with no entry are treated as
+  /// [ParticipantPaymentStatus.unpaid].
+  final Map<String, ParticipantPayment> participantPayments;
+
   // ── Convenience getters ──────────────────────────────────────────────────
 
   /// Only the participants who are actually included in the split.
@@ -253,6 +373,38 @@ class Bill {
     }).toList();
   }
 
+  /// Returns the [ParticipantPayment] for [userId], defaulting to an unpaid
+  /// state when no record exists.
+  ParticipantPayment paymentFor(String userId) =>
+      participantPayments[userId] ?? const ParticipantPayment();
+
+  /// The included participants whose payment request is currently pending
+  /// verification by the bill creator.
+  List<BillParticipant> get pendingVerificationParticipants =>
+      includedParticipants
+          .where((p) => paymentFor(p.id).isPending)
+          .toList();
+
+  /// Recomputes the bill-level [BillPaymentStatus] from the per-participant
+  /// payment states. Used after a verification so the aggregate status stays
+  /// in sync.
+  BillPaymentStatus get computedPaymentStatus {
+    final included = includedParticipants;
+    if (included.isEmpty) return BillPaymentStatus.unpaid;
+    final paidCount = included
+        .where((p) => paymentFor(p.id).status == ParticipantPaymentStatus.paid)
+        .length;
+    if (paidCount == included.length) return BillPaymentStatus.paid;
+    final anySettled = included.any((p) {
+      final s = paymentFor(p.id).status;
+      return s == ParticipantPaymentStatus.paid ||
+          s == ParticipantPaymentStatus.partiallyPaid;
+    });
+    return anySettled
+        ? BillPaymentStatus.partiallyPaid
+        : BillPaymentStatus.unpaid;
+  }
+
   /// Creates a copy of this entity with the given fields replaced.
   Bill copyWith({
     String? id,
@@ -275,6 +427,7 @@ class Bill {
     Map<String, String>? paymentQrUrls,
     Object? selectedBankName = _kBillSentinel,
     Map<String, String>? paymentIds,
+    Map<String, ParticipantPayment>? participantPayments,
   }) {
     return Bill(
       id: id ?? this.id,
@@ -299,6 +452,8 @@ class Bill {
           ? this.selectedBankName
           : selectedBankName as String?,
       paymentIds: paymentIds ?? this.paymentIds,
+      participantPayments:
+          participantPayments ?? this.participantPayments,
     );
   }
 }
