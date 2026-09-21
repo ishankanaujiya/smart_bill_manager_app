@@ -1,0 +1,13 @@
+{
+  "name": "onesignal-proxy",
+  "version": "1.0.0",
+  "description": "Vercel serverless proxy that forwards push-notification requests to OneSignal after verifying a Firebase ID token. Keeps the OneSignal REST API key out of the mobile app bundle.",
+  "main": "api/notify.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  },
+  "license": "UNLICENSED"
+}

@@ -10,7 +10,7 @@ import '../widget/auth_header.dart';
 import '../widget/auth_text_field.dart';
 import '../widget/country_code_picker.dart';
 import '../widget/registration_step_indicator.dart';
-import 'registration_verify_screen.dart';
+import 'registration_profile_screen.dart';
 
 /// Registration step 1 — collect full name, email, Nepali mobile number and password.
 ///
@@ -207,7 +207,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => RegistrationVerifyScreen(
+        builder: (_) => RegistrationProfileScreen(
           fullName: _nameController.text.trim(),
           email: _emailController.text.trim(),
           phoneNumber: _phoneController.text.trim(),
@@ -334,7 +334,7 @@ class _RegistrationDetailsScreenState extends State<RegistrationDetailsScreen>
                               const SizedBox(height: AppSpacing.sm),
 
                               Text(
-                                "We'll text a 6-digit code to confirm this number",
+                                'Used by friends to find and add you on Smart Bill',
                                 style: AppTextStyles.caption.copyWith(
                                   color: colorScheme.onSurfaceVariant,
                                 ),

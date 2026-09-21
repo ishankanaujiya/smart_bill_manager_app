@@ -8,12 +8,17 @@ plugins {
 
 android {
     namespace = "com.nepasolvetech.smartbillmanager"
-    compileSdk = flutter.compileSdkVersion
+    // OneSignal's flutter_local_notifications dependency requires core
+    // library desugaring, which needs compileSdk 34+.
+    compileSdk = maxOf(flutter.compileSdkVersion, 34)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Required by flutter_local_notifications (transitive dep of
+        // onesignal_flutter) for java.time support on older Android.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -25,7 +30,9 @@ android {
         applicationId = "com.nepasolvetech.smartbillmanager"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // minSdk 21+ is required by flutter_local_notifications (transitive
+        // dep of onesignal_flutter).
+        minSdk = maxOf(flutter.minSdkVersion, 21)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -51,6 +58,10 @@ dependencies {
 
   // Add the dependencies for any other desired Firebase products
   // https://firebase.google.com/docs/android/setup#available-libraries
+
+  // Required by flutter_local_notifications (transitive dep of
+  // onesignal_flutter) for core library desugaring.
+  coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 flutter {

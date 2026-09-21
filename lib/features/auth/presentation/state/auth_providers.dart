@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/notifications/notification_service.dart';
 import '../../data/repositories/auth_repository_impl.dart';
+import '../../data/services/session_service.dart';
+import '../../../groups/data/service/cloudinary_service.dart';
 import '../../../users/data/repositories/user_repository_impl.dart';
 import '../../../users/domain/entities/app_user.dart';
 import '../../../users/domain/repositories/user_repository.dart';
@@ -19,6 +24,17 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 /// Provides the singleton [UserRepository] instance.
 final userRepositoryProvider = Provider<UserRepository>((ref) {
   return UserRepositoryImpl();
+});
+
+/// Provides the singleton [CloudinaryService] instance.
+final cloudinaryServiceProvider = Provider<CloudinaryService>((ref) {
+  return CloudinaryService();
+});
+/// Provides the singleton [SessionService] instance.
+///
+/// Used to persist the "remember me" preference across app launches.
+final sessionServiceProvider = Provider<SessionService>((ref) {
+  return SessionService();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,11 +97,17 @@ class AuthActionError extends AuthActionState {
 /// Notifier that wraps auth operations (register, sign in, Google sign-in)
 /// and exposes the loading/success/error state to the UI.
 class AuthActionNotifier extends StateNotifier<AuthActionState> {
-  AuthActionNotifier(this._authRepo, this._userRepo)
-      : super(const AuthActionIdle());
+  AuthActionNotifier(
+    this._authRepo,
+    this._userRepo,
+    this._sessionService,
+    this._cloudinary,
+  ) : super(const AuthActionIdle());
 
   final AuthRepository _authRepo;
   final UserRepository _userRepo;
+  final SessionService _sessionService;
+  final CloudinaryService _cloudinary;
 
   /// Registers a new user with email/password and stores their profile
   /// data in the Firestore "Users" collection.
@@ -100,6 +122,7 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
     required String phoneNumber,
     required String displayName,
     String? profilePicture,
+    String? profilePicturePath,
   }) async {
     state = const AuthActionLoading();
 
@@ -117,7 +140,17 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
 
       final firebaseUser = (result as AuthSuccess).user;
 
-      // 2. Store the user data in Firestore.
+      // 2. Upload the profile picture to Cloudinary if a local file was picked.
+      String? profilePictureUrl = profilePicture;
+      if (profilePicturePath != null && profilePicturePath.isNotEmpty) {
+        final file = File(profilePicturePath);
+        if (await file.exists()) {
+          profilePictureUrl =
+              await _cloudinary.uploadFile(file) ?? profilePictureUrl;
+        }
+      }
+
+      // 3. Store the user data in Firestore.
       final now = DateTime.now();
       final appUser = AppUser(
         id: firebaseUser.uid,
@@ -127,11 +160,13 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
         email: email,
         phoneNumber: phoneNumber,
         displayName: displayName,
-        profilePicture: profilePicture,
+        profilePicture: profilePictureUrl,
       );
 
       await _userRepo.createUser(appUser);
 
+      // Tag this device so OneSignal delivers notifications to the new user.
+      await NotificationService.instance.login(firebaseUser.uid);
       state = AuthActionSuccess(firebaseUser);
       return true;
     } catch (e) {
@@ -143,9 +178,13 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
   }
 
   /// Signs in an existing user with email and password.
+  ///
+  /// [rememberMe] persists the session across app launches when `true`. When
+  /// `false` the user will be asked to sign in again on the next app launch.
   Future<bool> signInWithEmailAndPassword({
     required String email,
     required String password,
+    required bool rememberMe,
   }) async {
     state = const AuthActionLoading();
 
@@ -160,7 +199,11 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
         return false;
       }
 
-      state = AuthActionSuccess((result as AuthSuccess).user);
+      await _sessionService.setRememberMe(rememberMe);
+      final signedInUser = (result as AuthSuccess).user;
+      // Tag this device so OneSignal delivers to all of the user's devices.
+      await NotificationService.instance.login(signedInUser.uid);
+      state = AuthActionSuccess(signedInUser);
       return true;
     } catch (e) {
       state = AuthActionError(
@@ -177,6 +220,11 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
   /// the available Google data (email, display name, profile picture)
   /// with nulls for missing fields so the registration flow can fill
   /// them in.
+  ///
+  /// Google sign-in is an interactive, consent-based flow with no
+  /// "remember me" checkbox, so the session is persisted by default —
+  /// the user stays signed in across launches until they explicitly
+  /// sign out.
   ///
   /// Returns `(true, null)` when the profile is complete and the user
   /// can go straight to the home screen.
@@ -196,11 +244,17 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
 
       final firebaseUser = (result as AuthSuccess).user;
 
+      // Persist the session for Google sign-in (no "remember me" checkbox
+      // is presented for the social sign-in flow).
+      await _sessionService.setRememberMe(true);
+
       // Check if a Firestore user document already exists.
       final existingUser = await _userRepo.getUser(firebaseUser.uid);
 
       if (existingUser != null && existingUser.isProfileComplete) {
         // Profile is complete — user can go straight to home.
+        // Tag this device for push notifications.
+        await NotificationService.instance.login(firebaseUser.uid);
         state = AuthActionSuccess(firebaseUser);
         return (success: true, partialUser: null);
       }
@@ -249,19 +303,33 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
     required String fullName,
     required String phoneNumber,
     required String displayName,
+    String? profilePicturePath,
   }) async {
     state = const AuthActionLoading();
 
     try {
+      // Upload the profile picture to Cloudinary if a local file was picked.
+      String? profilePictureUrl = partialUser.profilePicture;
+      if (profilePicturePath != null && profilePicturePath.isNotEmpty) {
+        final file = File(profilePicturePath);
+        if (await file.exists()) {
+          profilePictureUrl =
+              await _cloudinary.uploadFile(file) ?? profilePictureUrl;
+        }
+      }
+
       final updatedUser = partialUser.copyWith(
         fullName: fullName,
         phoneNumber: phoneNumber,
         displayName: displayName,
         updatedAt: DateTime.now(),
+        profilePicture: profilePictureUrl,
       );
 
       await _userRepo.updateUser(updatedUser);
 
+      // Profile is now complete — tag this device for push notifications.
+      await NotificationService.instance.login(partialUser.id);
       state = AuthActionSuccess(_authRepo.currentUser!);
       return true;
     } catch (e) {
@@ -273,8 +341,15 @@ class AuthActionNotifier extends StateNotifier<AuthActionState> {
   }
 
   /// Signs out the current user.
+  ///
+  /// Also clears the "remember me" preference so the next app launch
+  /// starts from the welcome screen.
   Future<void> signOut() async {
     state = const AuthActionLoading();
+    // Remove the OneSignal external_id tag before signing out so this device
+    // no longer receives notifications for the departing user.
+    await NotificationService.instance.logout();
+    await _sessionService.clear();
     await _authRepo.signOut();
     state = const AuthActionIdle();
   }
@@ -291,5 +366,7 @@ final authActionProvider =
   return AuthActionNotifier(
     ref.read(authRepositoryProvider),
     ref.read(userRepositoryProvider),
+    ref.read(sessionServiceProvider),
+    ref.read(cloudinaryServiceProvider),
   );
 });

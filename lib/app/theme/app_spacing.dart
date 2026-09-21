@@ -48,7 +48,7 @@ abstract final class AppSpacing {
   // ---------------------------------------------------------------------------
 
   /// Horizontal screen padding (left & right).
-  static const double screenHorizontal = lg; // 16
+  static const double screenHorizontal = xl; // 20
 
   /// Page-level top padding below the app bar.
   static const double pageTop = xxl; // 24
