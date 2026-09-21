@@ -406,50 +406,24 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
   }
 
   Widget _buildHeader(ColorScheme colorScheme, bool isDark) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
       children: [
-        _AnimatedTapScale(
-          onTap: () => Navigator.of(context).maybePop(),
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: colorScheme.outlineVariant),
-              boxShadow: isDark ? AppShadows.xsDark : AppShadows.xsLight,
-            ),
-            child: Icon(
-              Icons.arrow_back_ios_new,
-              color: colorScheme.onSurface,
-              size: 18,
-            ),
+        Text(
+          'Create Group',
+          style: AppTextStyles.headlineSmall.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w700,
           ),
+          textAlign: TextAlign.center,
         ),
-        Expanded(
-          child: Column(
-            children: [
-              Text(
-                'Create Group',
-                style: AppTextStyles.headlineSmall.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'Create a group and add members to get started',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Create a group and add members to get started',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: colorScheme.onSurfaceVariant,
           ),
+          textAlign: TextAlign.center,
         ),
-        const SizedBox(width: 44),
       ],
     );
   }
@@ -793,7 +767,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
       textInputAction: TextInputAction.done,
       maxLength: _maxGroupNameLength,
       decoration: InputDecoration(
-        hintText: 'e.g. Trip to Pokhara',
+        hintText: 'e.g. We 3',
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
           vertical: AppSpacing.lg,

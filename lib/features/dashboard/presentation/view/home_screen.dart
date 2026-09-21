@@ -260,17 +260,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
     );
 
-    // Pulsing blob (0.85 → 1.0 → 0.85).
-    final blobPulse = Tween<double>(begin: 0.85, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _ambient,
-        curve: Curves.easeInOutSine,
-      ),
-    );
-
-    // Shimmer sweep (0 → 1, loops).
-    final shimmer = Tween<double>(begin: -0.3, end: 1.3).animate(
-      CurvedAnimation(parent: _ambient, curve: Curves.easeInOut),
+    // Shimmer sweep — linear so it moves at constant speed.  Range -0.5 → 1.5
+    // ensures the band is fully off-screen at both the start and end of the
+    // cycle, so the wrap from 1→0 is invisible.
+    final shimmer = Tween<double>(begin: -0.5, end: 1.5).animate(
+      CurvedAnimation(parent: _ambient, curve: Curves.linear),
     );
 
     return AnimatedBuilder(
@@ -281,6 +275,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       builder: (context, _) {
         final scale = entranceAnim.value.clamp(0.0, 1.2);
         final opacity = entranceOpacity.value.clamp(0.0, 1.0);
+
+        // Pulsing blob — cosine-based so it's naturally periodic and doesn't
+        // jump when the ambient controller wraps from 1 back to 0.
+        // Computed inside the builder so it updates on every animation tick.
+        final blobPulse =
+            0.925 + 0.075 * (math.cos(math.pi * 2 * _ambient.value));
 
         // Pulsing glow.
         final pulse = (1 - math.cos(math.pi * 2 * _ambient.value)) * 0.5;
@@ -320,7 +320,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         right: -34,
                         top: -34,
                         child: Transform.scale(
-                          scale: blobPulse.value,
+                          scale: blobPulse,
                           child: Container(
                             width: 210,
                             height: 210,

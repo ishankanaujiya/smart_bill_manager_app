@@ -844,8 +844,8 @@ class _AccountIdFieldState extends State<_AccountIdField> {
 
   String get _hint {
     return switch (widget.method) {
-      BillPaymentMethod.esewa => 'Starts with 98 or 97',
-      BillPaymentMethod.khalti => 'Starts with 98 or 97',
+      BillPaymentMethod.esewa => '98XXXXXXXX',
+      BillPaymentMethod.khalti => '98XXXXXXXX',
       BillPaymentMethod.bank => 'Enter account number',
     };
   }

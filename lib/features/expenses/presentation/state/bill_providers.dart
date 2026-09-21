@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/notifications/notification_dispatcher.dart';
 import '../../../groups/data/service/cloudinary_service.dart';
 import '../../../groups/presentation/state/group_providers.dart';
 import '../../data/repositories/bill_repository_impl.dart';
@@ -64,11 +66,12 @@ class SaveBillError extends SaveBillState {
 /// Exposes loading/success/error state to the UI so the confirm button can
 /// show a spinner and the screen can react to the result.
 class SaveBillNotifier extends StateNotifier<SaveBillState> {
-  SaveBillNotifier(this._billRepo, this._cloudinary)
+  SaveBillNotifier(this._billRepo, this._cloudinary, this._dispatcher)
       : super(const SaveBillIdle());
 
   final BillRepository _billRepo;
   final CloudinaryService _cloudinary;
+  final NotificationDispatcher _dispatcher;
 
   /// Persists a [Bill] to Firestore.
   ///
@@ -135,6 +138,30 @@ class SaveBillNotifier extends StateNotifier<SaveBillState> {
       final saved = await _billRepo.createBill(billToSave);
 
       state = SaveBillSuccess(saved);
+
+      // 5. Notify all included participants (except the creator) about the
+      //    new bill. Fire-and-forget — errors are swallowed.
+      final recipientIds = saved.includedParticipants
+          .map((p) => p.id)
+          .where((id) => id != saved.createdBy)
+          .toList();
+      if (recipientIds.isNotEmpty) {
+        final actorName =
+            FirebaseAuth.instance.currentUser?.displayName?.trim();
+        unawaited(_dispatcher.dispatch(
+          type: NotificationType.billCreated,
+          targetUserIds: recipientIds,
+          params: {
+            'actorName': actorName?.isNotEmpty == true ? actorName! : 'A member',
+            'groupName': saved.groupName,
+            'billTitle': saved.title,
+            'amount': saved.totalAmount.toStringAsFixed(2),
+            'groupId': saved.groupId,
+            'billId': saved.id,
+          },
+        ));
+      }
+
       return true;
     } on FirebaseException catch (e) {
       final message = switch (e.code) {
@@ -168,6 +195,7 @@ final saveBillProvider =
   return SaveBillNotifier(
     ref.read(billRepositoryProvider),
     ref.read(cloudinaryServiceProvider),
+    ref.read(notificationDispatcherProvider),
   );
 });
 
@@ -244,9 +272,11 @@ class PaymentActionError extends PaymentActionState {
 /// [BillRepository]. The real-time [billStreamProvider] picks up the change
 /// and the UI updates automatically.
 class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
-  PaymentActionNotifier(this._billRepo) : super(const PaymentActionIdle());
+  PaymentActionNotifier(this._billRepo, this._dispatcher)
+      : super(const PaymentActionIdle());
 
   final BillRepository _billRepo;
+  final NotificationDispatcher _dispatcher;
 
   /// A participant submits a payment request for their own share.
   ///
@@ -274,6 +304,12 @@ class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
             ? 'Payment request submitted. Waiting for verification.'
             : 'Partial payment request submitted. Waiting for verification.',
       );
+
+      // Notify the bill creator that a payment request was submitted.
+      // We fetch the bill to get the creator's UID and the bill title.
+      // Fire-and-forget — errors are swallowed.
+      unawaited(_notifyPaymentRequested(groupId: groupId, billId: billId));
+
       return true;
     } on FirebaseException catch (e) {
       state = PaymentActionError(
@@ -292,6 +328,32 @@ class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
         'Could not submit the request. Please try again.',
       );
       return false;
+    }
+  }
+
+  /// Fetches the bill and dispatches a [NotificationType.paymentRequested]
+  /// notification to the bill creator.
+  Future<void> _notifyPaymentRequested({
+    required String groupId,
+    required String billId,
+  }) async {
+    try {
+      final bill = await _billRepo.getBill(groupId, billId);
+      if (bill == null) return;
+      final actorName =
+          FirebaseAuth.instance.currentUser?.displayName?.trim();
+      await _dispatcher.dispatch(
+        type: NotificationType.paymentRequested,
+        targetUserIds: [bill.createdBy],
+        params: {
+          'actorName': actorName?.isNotEmpty == true ? actorName! : 'A member',
+          'billTitle': bill.title,
+          'groupId': groupId,
+          'billId': billId,
+        },
+      );
+    } catch (e) {
+      debugPrint('[PaymentActionNotifier] _notifyPaymentRequested failed: $e');
     }
   }
 
@@ -326,6 +388,16 @@ class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
                 : 'Payment approved.'
             : 'Payment request rejected.',
       );
+
+      // Notify the requesting member that their request was approved or
+      // rejected. Fire-and-forget — errors are swallowed.
+      unawaited(_notifyPaymentVerified(
+        groupId: groupId,
+        billId: billId,
+        memberId: memberId,
+        approved: approved,
+      ));
+
       return true;
     } on FirebaseException catch (e) {
       state = PaymentActionError(
@@ -347,6 +419,36 @@ class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
     }
   }
 
+  /// Fetches the bill and dispatches a [NotificationType.paymentApproved] or
+  /// [NotificationType.paymentRejected] notification to the requesting member.
+  Future<void> _notifyPaymentVerified({
+    required String groupId,
+    required String billId,
+    required String memberId,
+    required bool approved,
+  }) async {
+    try {
+      final bill = await _billRepo.getBill(groupId, billId);
+      if (bill == null) return;
+      final actorName =
+          FirebaseAuth.instance.currentUser?.displayName?.trim();
+      await _dispatcher.dispatch(
+        type: approved
+            ? NotificationType.paymentApproved
+            : NotificationType.paymentRejected,
+        targetUserIds: [memberId],
+        params: {
+          'actorName': actorName?.isNotEmpty == true ? actorName! : 'A member',
+          'billTitle': bill.title,
+          'groupId': groupId,
+          'billId': billId,
+        },
+      );
+    } catch (e) {
+      debugPrint('[PaymentActionNotifier] _notifyPaymentVerified failed: $e');
+    }
+  }
+
   /// Resets the state back to idle (e.g. to clear a snackbar).
   void reset() => state = const PaymentActionIdle();
 }
@@ -354,7 +456,10 @@ class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
 /// Provider for [PaymentActionNotifier].
 final paymentActionProvider =
     StateNotifierProvider<PaymentActionNotifier, PaymentActionState>((ref) {
-  return PaymentActionNotifier(ref.read(billRepositoryProvider));
+  return PaymentActionNotifier(
+    ref.read(billRepositoryProvider),
+    ref.read(notificationDispatcherProvider),
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
