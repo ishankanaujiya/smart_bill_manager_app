@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -243,6 +245,42 @@ abstract final class AppTextStyles {
         fontSize: 10,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.3,
+        height: 1.0,
+      );
+
+  // ---------------------------------------------------------------------------
+  // Splash screen
+  // ---------------------------------------------------------------------------
+
+  /// Splash wordmark – 40sp, SemiBold, tight tracking.
+  static TextStyle get splashWordmark => _base.copyWith(
+        fontSize: 40,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.5,
+        height: 1.1,
+      );
+
+  /// Splash tagline – 12sp, SemiBold, uppercase with wide tracking.
+  static TextStyle get splashTagline => _base.copyWith(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 2.6,
+        height: 1.2,
+      );
+
+  /// Splash loader percentage – 10.5sp, SemiBold, tabular figures.
+  static TextStyle get splashLoaderPercent => _base.copyWith(
+        fontSize: 10.5,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.5,
+        height: 1.0,
+        fontFeatures: const [ui.FontFeature.tabularFigures()],
+      );
+
+  /// Splash coin badge glyph – 16sp, SemiBold.
+  static TextStyle get splashCoinBadge => _base.copyWith(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
         height: 1.0,
       );
 
