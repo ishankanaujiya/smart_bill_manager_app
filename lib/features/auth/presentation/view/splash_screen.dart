@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../app/theme/design_system.dart';
 
@@ -15,7 +16,7 @@ import '../../../../app/theme/design_system.dart';
 ///  - drifting aurora blobs on a masked grid with a subtle grain texture
 ///  - expanding ripple rings
 ///  - rising currency particles
-///  - a breathing logo tile with orbiting dots, a self-drawing glyph,
+///  - a breathing logo tile with orbiting dots, the brand artwork,
 ///    a coin badge and an animated sheen
 ///  - a per-letter wordmark entrance and an expanding tagline
 ///  - a sweeping loader bar with a live percentage
@@ -274,7 +275,7 @@ class _SplashScreenState extends State<SplashScreen>
 // Logo mark
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// The central logo tile: halo, orbiting dots, sheen border, drawn glyph and
+/// The central logo tile: halo, orbiting dots, sheen border, brand artwork and
 /// coin badge.
 class _LogoMark extends StatelessWidget {
   const _LogoMark({
@@ -309,11 +310,12 @@ class _LogoMark extends StatelessWidget {
       curve: _Spec.badgeInterval,
     ).drive(CurveTween(curve: _Spec.badgeCurve));
 
-    // Entrance: glyph paths draw in sequence.
-    final draw = <double>[
-      for (final interval in _Spec.glyphIntervals)
-        CurvedAnimation(parent: intro, curve: interval).value,
-    ];
+    // Entrance: the brand artwork fades and scales in once the tile has
+    // popped, echoing the tile's own spring.
+    final logoIn = CurvedAnimation(
+      parent: intro,
+      curve: _Spec.logoInterval,
+    ).drive(CurveTween(curve: _Spec.popCurve));
 
     return Transform.scale(
       // Breathe: 1.0 → 1.045 → 1.0.
@@ -390,13 +392,16 @@ class _LogoMark extends StatelessWidget {
                         opacity: 0.4 + 0.5 * sheen,
                       ),
                       child: Center(
-                        child: CustomPaint(
-                          size: const Size.square(_Spec.glyphSize),
-                          painter: _LogoGlyphPainter(
-                            color: palette.logoStroke,
-                            progress: draw,
-                            strokeWidth:
-                                _Spec.glyphStroke * _Spec.glyphSize / 54,
+                        child: Opacity(
+                          opacity: logoIn.value.clamp(0.0, 1.0),
+                          child: Transform.scale(
+                            scale: _Spec.logoScaleStart +
+                                (1 - _Spec.logoScaleStart) * logoIn.value,
+                            child: SvgPicture.asset(
+                              _Spec.logoAsset,
+                              width: _Spec.logoSize,
+                              height: _Spec.logoSize,
+                            ),
                           ),
                         ),
                       ),
@@ -498,86 +503,6 @@ class _Orbit extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Draws the four logo glyph strokes with a stroke-dash "self-drawing" effect.
-class _LogoGlyphPainter extends CustomPainter {
-  const _LogoGlyphPainter({
-    required this.color,
-    required this.progress,
-    required this.strokeWidth,
-  });
-
-  final Color color;
-
-  /// One 0→1 value per path (path 1..4).
-  final List<double> progress;
-  final double strokeWidth;
-
-  /// The four glyph paths, authored in a 54×54 viewBox.
-  static final List<Path> _paths = _buildPaths();
-
-  static List<Path> _buildPaths() {
-    return [
-      Path()
-        ..moveTo(38, 15)
-        ..cubicTo(34, 11, 28, 10, 23, 13.5)
-        ..cubicTo(16, 18.3, 16, 28, 22, 33),
-      Path()
-        ..moveTo(18, 21)
-        ..lineTo(23, 13.5)
-        ..lineTo(26.5, 20.5),
-      Path()
-        ..moveTo(16, 39)
-        ..cubicTo(20, 43, 26, 44, 31, 40.5)
-        ..cubicTo(38, 35.7, 38, 26, 32, 21),
-      Path()
-        ..moveTo(36, 33)
-        ..lineTo(31, 40.5)
-        ..lineTo(27.5, 33.5),
-    ];
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 54.0;
-    canvas.save();
-    canvas.scale(scale);
-
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth / scale
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    for (var i = 0; i < _paths.length; i++) {
-      final t = (i < progress.length ? progress[i] : 0.0).clamp(0.0, 1.0);
-      if (t <= 0) continue;
-
-      final metric = _paths[i].computeMetrics().first;
-      canvas.drawPath(
-        metric.extractPath(0, metric.length * t),
-        paint,
-      );
-    }
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_LogoGlyphPainter old) =>
-      old.color != color ||
-      old.strokeWidth != strokeWidth ||
-      !_listEquals(old.progress, progress);
-
-  static bool _listEquals(List<double> a, List<double> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 }
 
@@ -1098,7 +1023,10 @@ abstract final class _Spec {
   // ── Content ──
   static const String wordmark = 'Tabora';
   static const String tagline = 'Split fair · Settle faster';
-  static const String currencyGlyph = '₹';
+  static const String currencyGlyph = 'Rs';
+
+  /// Brand artwork rendered inside the logo tile.
+  static const String logoAsset = 'assets/icons/tabora.svg';
 
   // ── Timing ──
   static const Duration introDuration = Duration(milliseconds: 2500);
@@ -1136,12 +1064,8 @@ abstract final class _Spec {
   static const Interval badgeInterval = Interval(0.40, 0.64);
   static const Interval taglineInterval = Interval(0.62, 0.98);
 
-  static const List<Interval> glyphIntervals = [
-    Interval(0.20, 0.48),
-    Interval(0.34, 0.62),
-    Interval(0.40, 0.68),
-    Interval(0.52, 0.80),
-  ];
+  /// Brand artwork entrance — starts after the tile has popped.
+  static const Interval logoInterval = Interval(0.24, 0.58);
 
   /// Per-letter entrance interval (60 ms stagger, 550 ms each).
   static Interval letterInterval(int index) {
@@ -1165,8 +1089,12 @@ abstract final class _Spec {
 
   /// Halo diameter relative to the tile (≈ (118 + 2×36) / 118).
   static const double glowScale = 1.61;
-  static const double glyphSize = 56;
-  static const double glyphStroke = 4;
+
+  /// Brand artwork side length inside the tile.
+  static const double logoSize = 64;
+
+  /// Brand artwork entrance scale (0→1 maps to this→1).
+  static const double logoScaleStart = 0.7;
   static final BorderRadius tileRadius = BorderRadius.circular(32);
 
   // ── Grid ──

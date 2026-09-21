@@ -22,7 +22,6 @@ class AppSplashPalette {
     required this.auroraBlob3,
     required this.markGlow,
     required this.tileGradient,
-    required this.logoStroke,
     required this.coinGradient,
     required this.coinText,
     required this.wordmark,
@@ -67,9 +66,6 @@ class AppSplashPalette {
 
   /// Logo tile fill.
   final LinearGradient tileGradient;
-
-  /// Logo glyph stroke.
-  final Color logoStroke;
 
   /// Coin badge fill.
   final LinearGradient coinGradient;
@@ -182,7 +178,6 @@ class AppSplashPalette {
       end: Alignment.bottomRight,
       colors: [_greenDark, _greenDeep],
     ),
-    logoStroke: _darkText,
     coinGradient: LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
@@ -230,7 +225,6 @@ class AppSplashPalette {
       end: Alignment.bottomRight,
       colors: [_greenLight, _greenDeepLight],
     ),
-    logoStroke: _darkText,
     coinGradient: LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
