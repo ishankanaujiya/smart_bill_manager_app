@@ -21,6 +21,23 @@ class AuthFailure extends AuthResult {
   final String message;
 }
 
+/// Result of a password-reset request.
+///
+/// A reset has no authenticated [User] to carry on success, so it uses its
+/// own sealed hierarchy rather than [AuthResult].
+sealed class PasswordResetResult {
+  const PasswordResetResult();
+}
+
+class PasswordResetSent extends PasswordResetResult {
+  const PasswordResetSent();
+}
+
+class PasswordResetFailure extends PasswordResetResult {
+  const PasswordResetFailure(this.message);
+  final String message;
+}
+
 /// Abstract repository for Firebase Authentication.
 abstract class AuthRepository {
   /// Creates a new user account with email and password.
@@ -42,6 +59,13 @@ abstract class AuthRepository {
   /// If the user cancels the sign-in flow, returns [AuthResult.failure] with
   /// a cancellation message.
   Future<AuthResult> signInWithGoogle();
+
+  /// Sends a password-reset email to [email].
+  ///
+  /// Firebase emails a secure link that opens a hosted page where the user
+  /// sets a new password. Returns [PasswordResetSent] on success or
+  /// [PasswordResetFailure] with a user-friendly message on failure.
+  Future<PasswordResetResult> sendPasswordResetEmail({required String email});
 
   /// Returns the currently signed-in user, or `null` if no user is signed in.
   User? get currentUser;

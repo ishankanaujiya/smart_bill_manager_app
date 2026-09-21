@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:smart_bill_manager/features/auth/domain/repositories/auth_repository.dart';
+import 'package:smart_bill_manager/features/auth/data/services/session_service.dart';
 import 'package:smart_bill_manager/features/auth/presentation/state/auth_providers.dart';
 import 'package:smart_bill_manager/features/users/domain/entities/app_user.dart';
 import 'package:smart_bill_manager/features/users/domain/repositories/user_repository.dart';
@@ -29,6 +30,13 @@ class _StubAuthRepository implements AuthRepository {
   @override
   Future<AuthResult> signInWithGoogle() async {
     return const AuthResult.failure('Not implemented in tests.');
+  }
+
+  @override
+  Future<PasswordResetResult> sendPasswordResetEmail({
+    required String email,
+  }) async {
+    return const PasswordResetSent();
   }
 
   @override
@@ -59,12 +67,42 @@ class _StubUserRepository implements UserRepository {
   Future<void> deleteUser(String uid) async {}
 }
 
+/// In-memory [SessionService] stub.
+///
+/// The real implementation reads from `flutter_secure_storage`, whose
+/// platform channel is unavailable in widget tests — leaving the real
+/// service in place makes [AuthGate]'s bootstrap throw and the app stays
+/// stuck on the splash.
+class _StubSessionService implements SessionService {
+  @override
+  Future<bool> getRememberMe() async => false;
+
+  @override
+  Future<void> setRememberMe(bool value) async {}
+
+  @override
+  Future<void> clear() async {}
+}
+
+/// Pumps past the animated splash into the next screen.
+///
+/// The splash (and the sign-in header) run perpetual `repeat()` animations,
+/// so `pumpAndSettle` would never complete. Advancing the clock in small
+/// steps lets the entrance, fade-out, and route transition all progress.
+Future<void> _pumpPastSplash(WidgetTester tester) async {
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+}
+
 void main() {
-  /// Provider overrides that replace Firebase-dependent repositories with
-  /// in-memory stubs so widget tests don't require Firebase initialization.
+  /// Provider overrides that replace Firebase- and plugin-dependent
+  /// repositories/services with in-memory stubs so widget tests don't
+  /// require Firebase initialization or platform channels.
   final testOverrides = [
     authRepositoryProvider.overrideWithValue(_StubAuthRepository()),
     userRepositoryProvider.overrideWithValue(_StubUserRepository()),
+    sessionServiceProvider.overrideWithValue(_StubSessionService()),
   ];
 
   testWidgets('App renders welcome screen successfully', (WidgetTester tester) async {
@@ -74,7 +112,7 @@ void main() {
         child: const SmartBillManagerApp(),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpPastSplash(tester);
 
     // Verify all core welcome screen text and the image asset.
     expect(find.text('Welcome to'), findsOneWidget);
@@ -93,7 +131,7 @@ void main() {
         child: const SmartBillManagerApp(),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpPastSplash(tester);
 
     await tester.tap(find.text('Sign in'), warnIfMissed: false);
     // The sign-in header has a perpetual pulse animation, so pumpAndSettle
