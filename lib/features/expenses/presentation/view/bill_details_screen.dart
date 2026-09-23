@@ -734,6 +734,7 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
     showDialog<void>(
       context: context,
       builder: (context) => _RemindConfirmDialog(
+        bill: bill,
         recipients: recipients,
         onSend: () {
           Navigator.of(context).pop();
@@ -1383,84 +1384,399 @@ class _RemindMembersButtonState extends State<_RemindMembersButton>
 
 /// Confirmation dialog shown before a reminder is dispatched.
 ///
-/// Lists the members who will receive the notification so the creator knows
-/// exactly who is about to be nudged, and reassures them that members who
-/// have already paid are skipped.
+/// A gradient hero header sets the intent, then the members who will receive
+/// the notification are listed as cards — each with their avatar and the
+/// outstanding amount — so the creator knows exactly who is about to be
+/// nudged. A reassurance strip notes that members who have already paid are
+/// skipped.
 class _RemindConfirmDialog extends StatelessWidget {
   const _RemindConfirmDialog({
+    required this.bill,
     required this.recipients,
     required this.onSend,
   });
 
+  final Bill bill;
   final List<BillParticipant> recipients;
   final VoidCallback onSend;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final count = recipients.length;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final gradient = isDark
+        ? AppColors.darkPrimaryGradient
+        : AppColors.lightPrimaryGradient;
 
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: AppRadius.radiusXl),
-      title: const Text('Send Reminder'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              count == 1
-                  ? 'Send a payment reminder to 1 member?'
-                  : 'Send a payment reminder to $count members?',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            for (final p in recipients)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.person_outline_rounded,
-                      size: 16,
-                      color: cs.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        p.bestDisplayName,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: cs.onSurface,
-                          fontWeight: FontWeight.w600,
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xl,
+        vertical: AppSpacing.xxl,
+      ),
+      backgroundColor: cs.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.radiusXxl),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0.94, end: 1.0),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutBack,
+        builder: (context, scale, child) => Transform.scale(
+          scale: scale,
+          child: child,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildHeader(gradient, recipients.length),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    AppSpacing.lg,
+                    AppSpacing.xl,
+                    AppSpacing.lg,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'WHO GETS REMINDED',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: AppSpacing.sm),
+                      for (final participant in recipients)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                          child: _buildRecipientTile(cs, isDark, participant),
+                        ),
+                      const SizedBox(height: AppSpacing.xs),
+                      _buildReassurance(cs, isDark),
+                    ],
+                  ),
                 ),
               ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
+              _buildActions(context, cs, gradient),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Gradient hero header ───────────────────────────────────────────────────
+
+  Widget _buildHeader(LinearGradient gradient, int count) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(gradient: gradient),
+      child: Stack(
+        children: [
+          // Decorative translucent circles for depth.
+          Positioned(
+            right: -34,
+            top: -40,
+            child: _decorBlob(130, 0.12),
+          ),
+          Positioned(
+            left: -30,
+            bottom: -50,
+            child: _decorBlob(100, 0.08),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.white.withValues(alpha: 0.22),
+                    borderRadius: AppRadius.radiusLg,
+                    border: Border.all(
+                      color: AppColors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_active_rounded,
+                    color: AppColors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'Send Payment Reminder',
+                  style: AppTextStyles.titleLarge.copyWith(
+                    color: AppColors.white,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  count == 1
+                      ? '1 member will be notified right away'
+                      : '$count members will be notified right away',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.white.withValues(alpha: 0.92),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _decorBlob(double size, double alpha) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.white.withValues(alpha: alpha),
+      ),
+    );
+  }
+
+  // ── Recipient card ─────────────────────────────────────────────────────────
+
+  Widget _buildRecipientTile(
+    ColorScheme cs,
+    bool isDark,
+    BillParticipant participant,
+  ) {
+    final share = bill.shareFor(participant.id);
+    final paid = bill.paymentFor(participant.id).amountPaid;
+    final outstanding = (share - paid).clamp(0.0, double.infinity);
+    final accent = _accentFor(participant.id, isDark);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.35 : 0.5),
+        borderRadius: AppRadius.radiusLg,
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          _buildAvatar(participant, accent),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  participant.bestDisplayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.titleSmall.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Payment pending',
+                  style: AppTextStyles.caption.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                AppConstants.formatCurrency(outstanding, withSymbol: true),
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: cs.error,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                'due',
+                style: AppTextStyles.caption.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(BillParticipant participant, Color accent) {
+    final picture = participant.profilePicture;
+    final hasPicture = picture != null && picture.isNotEmpty;
+
+    return Container(
+      width: 44,
+      height: 44,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: accent.withValues(alpha: 0.16),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: hasPicture
+          ? Image.network(
+              picture,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _buildInitials(participant, accent),
+            )
+          : _buildInitials(participant, accent),
+    );
+  }
+
+  Widget _buildInitials(BillParticipant participant, Color accent) {
+    return Center(
+      child: Text(
+        participant.initials.isEmpty ? '?' : participant.initials,
+        style: AppTextStyles.labelLarge.copyWith(
+          color: accent,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  /// Deterministic accent colour per participant, so a member keeps the same
+  /// avatar tint across the dialog.
+  Color _accentFor(String id, bool isDark) {
+    final palette =
+        isDark ? AppColors.chartColorsDark : AppColors.chartColorsLight;
+    final hash = id.codeUnits.fold<int>(0, (sum, unit) => sum + unit);
+    return palette[hash % palette.length];
+  }
+
+  // ── Reassurance strip ──────────────────────────────────────────────────────
+
+  Widget _buildReassurance(ColorScheme cs, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer.withValues(alpha: isDark ? 0.16 : 0.35),
+        borderRadius: AppRadius.radiusLg,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.verified_rounded, size: 18, color: cs.primary),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
               'Members who have already paid will not be notified.',
               style: AppTextStyles.caption.copyWith(
                 color: cs.onSurfaceVariant,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: onSend,
-          child: const Text('Send'),
-        ),
-      ],
+    );
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  Widget _buildActions(
+    BuildContext context,
+    ColorScheme cs,
+    LinearGradient gradient,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        0,
+        AppSpacing.xl,
+        AppSpacing.xl,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: cs.onSurface,
+                side: BorderSide(color: cs.outlineVariant),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppRadius.radiusLg,
+                ),
+              ),
+              child: Text(
+                'Cancel',
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            flex: 2,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: gradient,
+                borderRadius: AppRadius.radiusLg,
+                boxShadow: [
+                  BoxShadow(
+                    color: cs.primary.withValues(alpha: 0.32),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: AppColors.transparent,
+                child: InkWell(
+                  onTap: onSend,
+                  borderRadius: AppRadius.radiusLg,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.md,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.send_rounded,
+                          size: 18,
+                          color: AppColors.white,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(
+                          'Send Reminder',
+                          style: AppTextStyles.labelLarge.copyWith(
+                            color: AppColors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

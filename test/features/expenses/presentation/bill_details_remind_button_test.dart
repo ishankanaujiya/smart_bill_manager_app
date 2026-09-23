@@ -146,14 +146,18 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      final dialog = find.byType(AlertDialog);
-      expect(find.text('Send Reminder'), findsOneWidget);
-      expect(find.text('Send a payment reminder to 1 member?'), findsOneWidget);
+      final dialog = find.byType(Dialog);
+      expect(dialog, findsOneWidget);
+      expect(find.text('Send Payment Reminder'), findsOneWidget);
+      expect(
+        find.text('1 member will be notified right away'),
+        findsOneWidget,
+      );
       expect(
         find.descendant(of: dialog, matching: find.text('Member alice')),
         findsOneWidget,
       );
-      expect(find.text('Send'), findsOneWidget);
+      expect(find.text('Send Reminder'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
     });
   });
