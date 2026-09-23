@@ -254,10 +254,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenHorizontal,
                 ),
-                child: _SignOutTile(
-                  isDark: isDark,
-                  colorScheme: colorScheme,
-                  onTap: _confirmSignOut,
+                child: Column(
+                  children: [
+                    _SignOutTile(
+                      isDark: isDark,
+                      colorScheme: colorScheme,
+                      onTap: _confirmSignOut,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Text(
+                      'Version ${AppConstants.appVersion}',
+                      style: AppTextStyles.caption.copyWith(
+                        color: colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -388,7 +400,7 @@ class _ProfileHeaderCard extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xs),
               Text(
-                'Smart Bill Manager Member',
+                'Tabora Member',
                 style: AppTextStyles.labelMedium.copyWith(
                   color: AppColors.white.withValues(alpha: 0.85),
                   letterSpacing: 0.3,

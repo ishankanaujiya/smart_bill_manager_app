@@ -1835,9 +1835,15 @@ Color _methodAccent(BillPaymentMethod m) {
   };
 }
 
-String? _methodLogo(BillPaymentMethod m) {
+/// Brand logo asset for a payment method, resolved for the current theme.
+///
+/// eSewa ships a light-mode mark (dark artwork that reads on light surfaces)
+/// alongside the original, which is used on dark surfaces.
+String? _methodLogo(BillPaymentMethod m, {required bool isDark}) {
   return switch (m) {
-    BillPaymentMethod.esewa => 'assets/images/esewa.png',
+    BillPaymentMethod.esewa => isDark
+        ? 'assets/images/esewa.png'
+        : 'assets/images/esewa_light_mode.png',
     BillPaymentMethod.khalti => 'assets/images/khalti.png',
     BillPaymentMethod.bank => null,
   };
@@ -2031,7 +2037,7 @@ class _PaymentMethodCardState extends State<_PaymentMethodCard>
   Widget build(BuildContext context) {
     final cs = widget.colorScheme;
     final accent = _methodAccent(widget.method);
-    final logo = _methodLogo(widget.method);
+    final logo = _methodLogo(widget.method, isDark: widget.isDark);
 
     return ScaleTransition(
       scale: _press,

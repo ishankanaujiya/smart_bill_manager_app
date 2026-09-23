@@ -570,7 +570,7 @@ class _AppInfoCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            'Smart Bill Manager',
+            'Tabora',
             style: AppTextStyles.titleSmall.copyWith(
               color: colorScheme.onSurface,
               fontWeight: FontWeight.w600,
@@ -578,38 +578,12 @@ class _AppInfoCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            'Version 1.0.0',
+            'Version ${AppConstants.appVersion}',
             style: AppTextStyles.bodySmall.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
-          // Divider
-          Container(
-            height: 1,
-            color: colorScheme.outlineVariant.withValues(
-              alpha: isDark ? 0.3 : 0.5,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          // Made with love
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.favorite_rounded,
-                size: 14,
-                color: colorScheme.error.withValues(alpha: 0.7),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                'Made in Nepal',
-                style: AppTextStyles.caption.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
+          
         ],
       ),
     );
