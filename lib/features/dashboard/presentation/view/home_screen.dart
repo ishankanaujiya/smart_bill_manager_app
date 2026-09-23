@@ -10,6 +10,8 @@ import '../../../expenses/presentation/state/bill_providers.dart';
 import '../../../groups/domain/entities/group.dart';
 import '../../../groups/presentation/state/group_providers.dart';
 import '../../../groups/presentation/view/group_details_screen.dart';
+import '../../../notifications/presentation/state/notification_providers.dart';
+import '../../../notifications/presentation/view/notifications_screen.dart';
 import '../../../users/domain/entities/app_user.dart';
 
 /// Home tab for the app shell.
@@ -200,9 +202,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _buildNotificationButton(ColorScheme colorScheme) {
+    final unreadCount = ref.watch(unreadNotificationCountProvider);
     return IconButton(
-      onPressed: () {},
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+      ),
       icon: Badge(
+        isLabelVisible: unreadCount > 0,
         smallSize: 8,
         backgroundColor: colorScheme.error,
         child: Icon(

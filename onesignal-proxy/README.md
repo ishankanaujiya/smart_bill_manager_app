@@ -6,7 +6,9 @@ OneSignal REST API. It:
 1. Verifies the sender's Firebase ID token (via `firebase-admin`).
 2. Builds notification copy from server-side templates (so the client cannot
    push arbitrary text).
-3. Forwards the request to OneSignal targeting recipients by their
+3. Persists one document per recipient into the Firestore `notifications`
+   collection (the app's in-app inbox).
+4. Forwards the request to OneSignal targeting recipients by their
    `external_id` (= Firebase UID).
 
 ## Deploy to Vercel (one-time setup)
@@ -92,3 +94,32 @@ curl -X POST http://localhost:3000/api/notify \
 | `paymentApproved` | `actorName`, `billTitle`, `groupId`, `billId` |
 | `paymentRejected` | `actorName`, `billTitle`, `groupId`, `billId` |
 | `paymentReminder` | `actorName`, `billTitle`, `groupName`, `groupId`, `billId` |
+
+## Firestore inbox (`notifications`)
+
+For every accepted request the proxy writes **one document per recipient**
+into the top-level `notifications` collection, so the app can show an in-app
+notification list (the home-screen bell icon). Document shape:
+
+| Field | Type | Notes |
+|---|---|---|
+| `user_id` | String | Recipient's Firebase UID — the app queries on this field. |
+| `type` | String | One of the `type` values above. |
+| `title` | String | Rendered heading. |
+| `body` | String | Rendered body. |
+| `group_id` | String \| null | For navigation. |
+| `bill_id` | String \| null | For navigation. |
+| `read` | Boolean | Always `false` on create; the app flips it to `true`. |
+| `created_at` | Timestamp | Server timestamp. |
+
+- Documents are written with the **Admin SDK**, which bypasses Firestore
+  security rules. Clients can only read / mark-as-read their own documents
+  (see the `notifications` block in `firestore.rules`).
+- The write is **best-effort**: a Firestore failure is logged and never
+  prevents the push from being delivered.
+- The app's list query is `where user_id == uid` only (sorted newest-first in
+  memory), so it needs **no composite index** — Firestore's automatic
+  single-field index is enough. `firestore.indexes.json` stays empty.
+
+> **Remember to redeploy** (`vercel --prod`) after changing this function,
+> otherwise new notifications are pushed but never stored in the inbox.

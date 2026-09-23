@@ -4,8 +4,10 @@
  * Accepts a notification dispatch request from the Smart Bill Manager Flutter
  * app, verifies the sender's Firebase ID token, builds a notification payload
  * from server-side templates (so no arbitrary text can be pushed from the
- * client), and forwards it to the OneSignal REST API targeting the recipient
- * users' devices via their OneSignal external_id (= Firebase UID).
+ * client), persists one document per recipient into the Firestore
+ * `notifications` collection (for the in-app inbox), and forwards it to the
+ * OneSignal REST API targeting the recipient users' devices via their
+ * OneSignal external_id (= Firebase UID).
  *
  * Required environment variables (set in the Vercel dashboard):
  *   ONESIGNAL_APP_ID        — OneSignal App ID
@@ -148,6 +150,37 @@ function sendOneSignalNotification(payload) {
   });
 }
 
+// ── Firestore persistence ────────────────────────────────────────────────────
+//
+// Writes one document per recipient into the `notifications` collection so the
+// app can show an in-app inbox. Documents are written with the Admin SDK, which
+// bypasses Firestore security rules — clients can only read / mark-as-read
+// their own documents (see firestore.rules).
+//
+// This is best-effort: a Firestore failure must never prevent the push from
+// being delivered, and vice-versa.
+async function persistNotifications({ recipients, type, title, body, data }) {
+  const admin = getAdmin();
+  const db = admin.firestore();
+  const batch = db.batch();
+
+  recipients.forEach((uid) => {
+    const ref = db.collection('notifications').doc();
+    batch.set(ref, {
+      user_id: uid,
+      type,
+      title,
+      body,
+      group_id: data.groupId || null,
+      bill_id: data.billId || null,
+      read: false,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 module.exports = async function handler(req, res) {
@@ -219,7 +252,15 @@ module.exports = async function handler(req, res) {
     data,
   };
 
-  // ── 4. Forward to OneSignal (best-effort) ────────────────────────────────
+  // ── 4. Persist to Firestore for the in-app inbox (best-effort) ───────────
+  try {
+    await persistNotifications({ recipients, type, title, body, data });
+  } catch (err) {
+    // Never fail the request — push delivery must still proceed.
+    console.error('[notify] Failed to persist notifications:', err.message);
+  }
+
+  // ── 5. Forward to OneSignal (best-effort) ────────────────────────────────
   try {
     const result = await sendOneSignalNotification(oneSignalPayload);
     if (result.status >= 400) {

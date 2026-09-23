@@ -43,3 +43,33 @@ app (NotificationDispatcher) → POST /api/notify → OneSignal
   (`cd onesignal-proxy && vercel --prod`). `NotificationDispatcher.dispatch`
   swallows non-2xx responses, so a missing deployment fails silently while the
   UI still reports success.
+
+## Notification inbox
+
+Every dispatched push is mirrored into a top-level Firestore `notifications`
+collection so the app can show an in-app inbox (home-screen bell icon →
+`lib/features/notifications/presentation/view/notifications_screen.dart`).
+
+- Server side: `onesignal-proxy/api/notify.js` writes **one document per
+  recipient** (`user_id`, `type`, `title`, `body`, `group_id`, `bill_id`,
+  `read`, `created_at`) using the Admin SDK. Best-effort — a Firestore failure
+  never blocks the push. **Redeploy the proxy** for changes to take effect.
+- Client side: `lib/features/notifications/` (entity → model → repository →
+  providers → screen). The list query is `where('user_id', ==, uid)` only —
+  ordering/limiting happens in memory — so **no composite index is required**
+  and `firestore.indexes.json` stays empty.
+- The inbox is scoped by `currentUidProvider`
+  (`lib/features/groups/presentation/state/group_providers.dart`), which
+  **watches `authStateStreamProvider`** so it stays correct across sign-out /
+  sign-in. Do not revert it to a plain `FirebaseAuth.instance.currentUser`
+  read — that caches the first uid for the container's lifetime (the app keeps
+  one `ProviderScope`), so every per-user stream would show the previous
+  user's data after an account switch. `currentAppUserProvider`
+  (`lib/features/auth/presentation/state/auth_providers.dart`) follows the
+  same rule for the user's profile document.
+- Rules: the `notifications` block in `firestore.rules` allows a user to read
+  only their own documents and to update **only** the `read` key; create/delete
+  are denied (the Admin SDK bypasses rules).
+- Tapping a row marks it read and opens the target screen via
+  `lib/core/notifications/notification_router.dart` — the same router used by
+  push-tap handling in `NotificationService`, so both stay consistent.
