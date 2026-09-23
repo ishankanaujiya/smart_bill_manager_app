@@ -91,3 +91,4 @@ curl -X POST http://localhost:3000/api/notify \
 | `paymentRequested` | `actorName`, `billTitle`, `groupId`, `billId` |
 | `paymentApproved` | `actorName`, `billTitle`, `groupId`, `billId` |
 | `paymentRejected` | `actorName`, `billTitle`, `groupId`, `billId` |
+| `paymentReminder` | `actorName`, `billTitle`, `groupName`, `groupId`, `billId` |

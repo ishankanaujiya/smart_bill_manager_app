@@ -102,6 +102,16 @@ const TEMPLATES = {
       billId: billId ?? '',
     }),
   },
+  paymentReminder: {
+    title: ({ billTitle }) => `Payment reminder — "${billTitle}"`,
+    body: ({ actorName, billTitle, groupName }) =>
+      `${actorName} reminds you about your pending payment for "${billTitle}" in "${groupName}".`,
+    data: ({ groupId, billId }) => ({
+      type: 'paymentReminder',
+      groupId: groupId ?? '',
+      billId: billId ?? '',
+    }),
+  },
 };
 
 // ── OneSignal REST call ──────────────────────────────────────────────────────

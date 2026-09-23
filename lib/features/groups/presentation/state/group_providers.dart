@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -149,7 +148,9 @@ class CreateGroupNotifier extends StateNotifier<CreateGroupState> {
       if (recipientIds.isNotEmpty) {
         final actorName =
             FirebaseAuth.instance.currentUser?.displayName?.trim();
-        unawaited(_dispatcher.dispatch(
+        // Fire-and-forget: the group is already saved, so the delivery
+        // outcome is intentionally discarded.
+        _dispatcher.dispatch(
           type: NotificationType.groupAdded,
           targetUserIds: recipientIds,
           params: {
@@ -157,7 +158,7 @@ class CreateGroupNotifier extends StateNotifier<CreateGroupState> {
             'groupName': trimmedName,
             'groupId': saved.id,
           },
-        ));
+        ).ignore();
       }
 
       return true;

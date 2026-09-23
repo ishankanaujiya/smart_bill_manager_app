@@ -154,6 +154,8 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
     final included = bill.includedParticipants;
     final date = bill.date ?? bill.createdAt;
     final isCreator = widget.currentUserId == bill.createdBy;
+    // Participants the creator can still nudge about an outstanding share.
+    final remindable = bill.remindableParticipants;
     // Whether at least one row offers a tappable status (the current user
     // has an unpaid/rejected share). Drives the animated "tap to update"
     // hint pointer next to the Status column header.
@@ -314,6 +316,19 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
                       bill: bill,
                       onPrimary: colorScheme.onPrimary,
                     ),
+                    // Reminder action — creator only, and only while at
+                    // least one member still owes their share.
+                    if (isCreator && remindable.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      _RemindMembersButton(
+                        count: remindable.length,
+                        onPrimary: colorScheme.onPrimary,
+                        onTap: () => _showRemindDialog(
+                          bill: bill,
+                          recipients: remindable,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -707,6 +722,35 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
           approved: approved,
           receivedAmount: receivedAmount,
           verifiedBy: widget.currentUserId,
+        );
+  }
+
+  /// Opens a confirmation dialog listing the members who will be reminded
+  /// before dispatching the notification.
+  void _showRemindDialog({
+    required Bill bill,
+    required List<BillParticipant> recipients,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => _RemindConfirmDialog(
+        recipients: recipients,
+        onSend: () {
+          Navigator.of(context).pop();
+          _sendReminder(bill);
+        },
+      ),
+    );
+  }
+
+  /// Sends a payment reminder to the bill's outstanding participants.
+  ///
+  /// The resulting success/error snackbar is surfaced by the
+  /// [paymentActionProvider] listener in [build].
+  Future<void> _sendReminder(Bill bill) async {
+    await ref.read(paymentActionProvider.notifier).remindOutstandingParticipants(
+          groupId: bill.groupId,
+          billId: bill.id,
         );
   }
 }
@@ -1227,6 +1271,196 @@ class _ProgressFill extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Reminder button (inside the gradient summary card)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Creator-only action shown at the bottom of the gradient bill summary card.
+///
+/// Displays how many members still owe their share and, when tapped, opens
+/// [_RemindConfirmDialog] before dispatching the push reminders. Styled as a
+/// translucent `onPrimary`-tinted pill so it reads as part of the card, with
+/// the same press-scale feedback used by [_ParticipantRow].
+class _RemindMembersButton extends StatefulWidget {
+  const _RemindMembersButton({
+    required this.count,
+    required this.onPrimary,
+    required this.onTap,
+  });
+
+  final int count;
+  final Color onPrimary;
+  final VoidCallback onTap;
+
+  @override
+  State<_RemindMembersButton> createState() => _RemindMembersButtonState();
+}
+
+class _RemindMembersButtonState extends State<_RemindMembersButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+      lowerBound: 0.96,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onPrimary = widget.onPrimary;
+    final label = widget.count == 1
+        ? 'Remind 1 member'
+        : 'Remind ${widget.count} members';
+
+    return ScaleTransition(
+      scale: _press,
+      child: GestureDetector(
+        onTapDown: (_) => _press.reverse(),
+        onTapUp: (_) {
+          _press.forward();
+          widget.onTap();
+        },
+        onTapCancel: () => _press.forward(),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: onPrimary.withValues(alpha: 0.18),
+            borderRadius: AppRadius.radiusLg,
+            border: Border.all(
+              color: onPrimary.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.notifications_active_rounded,
+                size: 18,
+                color: onPrimary,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: onPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 16,
+                color: onPrimary.withValues(alpha: 0.85),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Confirmation dialog shown before a reminder is dispatched.
+///
+/// Lists the members who will receive the notification so the creator knows
+/// exactly who is about to be nudged, and reassures them that members who
+/// have already paid are skipped.
+class _RemindConfirmDialog extends StatelessWidget {
+  const _RemindConfirmDialog({
+    required this.recipients,
+    required this.onSend,
+  });
+
+  final List<BillParticipant> recipients;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final count = recipients.length;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.radiusXl),
+      title: const Text('Send Reminder'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              count == 1
+                  ? 'Send a payment reminder to 1 member?'
+                  : 'Send a payment reminder to $count members?',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            for (final p in recipients)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline_rounded,
+                      size: 16,
+                      color: cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        p.bestDisplayName,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Members who have already paid will not be notified.',
+              style: AppTextStyles.caption.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: onSend,
+          child: const Text('Send'),
+        ),
+      ],
     );
   }
 }
