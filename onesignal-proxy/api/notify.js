@@ -85,7 +85,7 @@ const TEMPLATES = {
   paymentApproved: {
     title: ({ billTitle }) => `Payment approved — "${billTitle}"`,
     body: ({ actorName, billTitle }) =>
-      `${actorName} approved your payment for "${billTitle}".`,
+      `Your payment request for "${billTitle}" was approved.`,
     data: ({ groupId, billId }) => ({
       type: 'paymentApproved',
       groupId: groupId ?? '',
@@ -95,7 +95,7 @@ const TEMPLATES = {
   paymentRejected: {
     title: ({ billTitle }) => `Payment rejected — "${billTitle}"`,
     body: ({ actorName, billTitle }) =>
-      `${actorName} rejected your payment request for "${billTitle}". Please resubmit.`,
+      `Your payment request for the bill "${billTitle}" was rejected. Please resubmit.`,
     data: ({ groupId, billId }) => ({
       type: 'paymentRejected',
       groupId: groupId ?? '',
@@ -105,7 +105,7 @@ const TEMPLATES = {
   paymentReminder: {
     title: ({ billTitle }) => `Payment reminder — "${billTitle}"`,
     body: ({ actorName, billTitle, groupName }) =>
-      `${actorName} reminds you about your pending payment for "${billTitle}" in "${groupName}".`,
+      `Your payment for the bill named "${billTitle}" in ${groupName} is still pending. Please settle the outstanding amount at your earliest convenience`,
     data: ({ groupId, billId }) => ({
       type: 'paymentReminder',
       groupId: groupId ?? '',
