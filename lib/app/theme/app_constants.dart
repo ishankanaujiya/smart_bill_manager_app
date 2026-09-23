@@ -42,4 +42,11 @@ abstract final class AppConstants {
   /// Tolerance used when comparing whether custom-split shares sum to the
   /// total amount (e.g. 0.01 → within one paisa).
   static const double splitRoundingTolerance = 0.01;
+
+  // ── App metadata ───────────────────────────────────────────────────────────
+
+  /// The app version shown in the UI (profile and help screens).
+  ///
+  /// Keep in sync with the `version:` field in `pubspec.yaml`.
+  static const String appVersion = '1.0.0';
 }

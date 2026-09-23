@@ -200,7 +200,6 @@ class _BottomNavBar extends StatelessWidget {
                       currentIndex: currentIndex,
                       icon: Icons.person_outline,
                       activeIcon: Icons.person_rounded,
-                      hasNotification: true,
                       onTap: () => onTap(3),
                       colorScheme: colorScheme,
                       isDark: isDark,
@@ -225,7 +224,6 @@ class _NavItem extends StatelessWidget {
     required this.onTap,
     required this.colorScheme,
     required this.isDark,
-    this.hasNotification = false,
   });
 
   final int index;
@@ -235,7 +233,6 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
   final ColorScheme colorScheme;
   final bool isDark;
-  final bool hasNotification;
 
   bool get isSelected => index == currentIndex;
 
@@ -270,11 +267,10 @@ class _NavItem extends StatelessWidget {
                       borderRadius: AppRadius.radiusFull,
                     )
                   : null,
-              child: _NavIconWithDot(
-                icon: isSelected ? activeIcon : icon,
+              child: Icon(
+                isSelected ? activeIcon : icon,
                 color: iconColor,
-                hasNotification: hasNotification,
-                isSelected: isSelected,
+                size: 26,
               ),
             ),
           ),
@@ -284,108 +280,3 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-class _NavIconWithDot extends StatelessWidget {
-  const _NavIconWithDot({
-    required this.icon,
-    required this.color,
-    required this.hasNotification,
-    required this.isSelected,
-  });
-
-  final IconData icon;
-  final Color color;
-  final bool hasNotification;
-  final bool isSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(
-          icon,
-          color: color,
-          size: 26,
-        ),
-        if (hasNotification)
-          Positioned(
-            right: -2,
-            bottom: -1,
-            child: _NotificationDot(animate: !isSelected),
-          ),
-      ],
-    );
-  }
-}
-
-class _NotificationDot extends StatefulWidget {
-  const _NotificationDot({required this.animate});
-
-  final bool animate;
-
-  @override
-  State<_NotificationDot> createState() => _NotificationDotState();
-}
-
-class _NotificationDotState extends State<_NotificationDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-
-    _scale = Tween<double>(begin: 0.85, end: 1.15).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
-      ),
-    );
-
-    if (widget.animate) {
-      _controller.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _NotificationDot oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.animate) {
-      if (!_controller.isAnimating) _controller.repeat(reverse: true);
-    } else {
-      _controller.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _scale,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: widget.animate ? _scale.value : 1.0,
-          child: child,
-        );
-      },
-      child: Container(
-        width: 8,
-        height: 8,
-        decoration: const BoxDecoration(
-          color: AppColors.error,
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
-  }
-}

@@ -30,6 +30,9 @@ enum NotificationType {
 
   /// The bill creator rejected a payment request.
   paymentRejected,
+
+  /// The bill creator reminded outstanding members about an unpaid share.
+  paymentReminder,
 }
 
 extension _NotificationTypeX on NotificationType {
@@ -39,6 +42,7 @@ extension _NotificationTypeX on NotificationType {
         NotificationType.paymentRequested => 'paymentRequested',
         NotificationType.paymentApproved => 'paymentApproved',
         NotificationType.paymentRejected => 'paymentRejected',
+        NotificationType.paymentReminder => 'paymentReminder',
       };
 }
 
@@ -66,7 +70,16 @@ class NotificationDispatcher {
   /// The current user is excluded from [targetUserIds] server-side as well,
   /// but callers should also filter them out before calling to avoid a
   /// wasted network round-trip.
-  Future<void> dispatch({
+  ///
+  /// Returns `true` only when the proxy accepted the request. Returns `false`
+  /// when the notification could not be dispatched — no recipients, no signed
+  /// in user, an unconfigured proxy URL, a network failure, or a non-2xx proxy
+  /// response (e.g. a `type` the deployed proxy does not know about yet).
+  ///
+  /// This never throws: notification delivery is best-effort and must not
+  /// interfere with the main operation. Callers that don't care about the
+  /// outcome should use [Future.ignore].
+  Future<bool> dispatch({
     required NotificationType type,
     required List<String> targetUserIds,
     Map<String, String> params = const {},
@@ -76,7 +89,7 @@ class NotificationDispatcher {
 
     if (targetUserIds.isEmpty) {
       debugPrint('[NotificationDispatcher] no target users — skipping');
-      return;
+      return false;
     }
 
     // Skip during tests / when proxy URL is not configured yet.
@@ -85,7 +98,7 @@ class NotificationDispatcher {
         '[NotificationDispatcher] proxyBaseUrl is not configured yet — '
         'skipping $type notification.',
       );
-      return;
+      return false;
     }
 
     try {
@@ -94,17 +107,17 @@ class NotificationDispatcher {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         debugPrint('[NotificationDispatcher] no current user — skipping');
-        return;
+        return false;
       }
       final idToken = await user.getIdToken();
       if (idToken == null) {
         debugPrint('[NotificationDispatcher] idToken is null — skipping');
-        return;
+        return false;
       }
       debugPrint('[NotificationDispatcher] got Firebase ID token '
           '(${idToken.length} chars), sending to proxy...');
 
-      // 2. POST to the Vercel proxy (fire-and-forget).
+      // 2. POST to the Vercel proxy.
       final uri = Uri.parse('${NotificationService.proxyBaseUrl}/api/notify');
       final response = await http
           .post(
@@ -129,11 +142,14 @@ class NotificationDispatcher {
           '[NotificationDispatcher] proxy returned ${response.statusCode}: '
           '${response.body}',
         );
+        return false;
       }
+      return true;
     } catch (e) {
       // Never surface notification errors to the user — delivery is
       // best-effort and must not interfere with the main operation.
       debugPrint('[NotificationDispatcher] dispatch failed ($type): $e');
+      return false;
     }
   }
 }

@@ -385,6 +385,21 @@ class Bill {
           .where((p) => paymentFor(p.id).isPending)
           .toList();
 
+  /// The included participants who still owe money and can therefore be
+  /// reminded by the bill creator — those whose status is `unpaid` or
+  /// `partially_paid`.
+  ///
+  /// Participants with a pending request (`requested`), a rejected request
+  /// (`rejected`), or a verified full payment (`paid`) are excluded, as is
+  /// the creator, who cannot be reminded about their own bill.
+  List<BillParticipant> get remindableParticipants =>
+      includedParticipants.where((p) {
+        if (p.id == createdBy) return false;
+        final status = paymentFor(p.id).status;
+        return status == ParticipantPaymentStatus.unpaid ||
+            status == ParticipantPaymentStatus.partiallyPaid;
+      }).toList();
+
   /// Recomputes the bill-level [BillPaymentStatus] from the per-participant
   /// payment states. Used after a verification so the aggregate status stays
   /// in sync.

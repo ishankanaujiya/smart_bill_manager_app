@@ -4461,7 +4461,9 @@ class _ReviewPaymentMethodCard extends StatelessWidget {
 
   String? get _logoAsset {
     return switch (entry.method) {
-      BillPaymentMethod.esewa => 'assets/images/esewa.png',
+      BillPaymentMethod.esewa => isDark
+          ? 'assets/images/esewa.png'
+          : 'assets/images/esewa_light_mode.png',
       BillPaymentMethod.khalti => 'assets/images/khalti.png',
       BillPaymentMethod.bank => null,
     };

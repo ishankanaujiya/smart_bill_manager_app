@@ -148,7 +148,9 @@ class SaveBillNotifier extends StateNotifier<SaveBillState> {
       if (recipientIds.isNotEmpty) {
         final actorName =
             FirebaseAuth.instance.currentUser?.displayName?.trim();
-        unawaited(_dispatcher.dispatch(
+        // Fire-and-forget: the bill is already saved, so the delivery
+        // outcome is intentionally discarded.
+        _dispatcher.dispatch(
           type: NotificationType.billCreated,
           targetUserIds: recipientIds,
           params: {
@@ -159,7 +161,7 @@ class SaveBillNotifier extends StateNotifier<SaveBillState> {
             'groupId': saved.groupId,
             'billId': saved.id,
           },
-        ));
+        ).ignore();
       }
 
       return true;
@@ -277,6 +279,21 @@ class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
 
   final BillRepository _billRepo;
   final NotificationDispatcher _dispatcher;
+
+  /// Best-effort display name of the signed-in user, used as the `actorName`
+  /// in notification copy.
+  ///
+  /// Falls back to a generic label when the name is unavailable — the user
+  /// may have signed up with email/password and have no `displayName`, and
+  /// resolving notification copy must never break the operation itself.
+  String get _actorName {
+    try {
+      final name = FirebaseAuth.instance.currentUser?.displayName?.trim();
+      return name?.isNotEmpty == true ? name! : 'A member';
+    } catch (_) {
+      return 'A member';
+    }
+  }
 
   /// A participant submits a payment request for their own share.
   ///
@@ -446,6 +463,79 @@ class PaymentActionNotifier extends StateNotifier<PaymentActionState> {
       );
     } catch (e) {
       debugPrint('[PaymentActionNotifier] _notifyPaymentVerified failed: $e');
+    }
+  }
+
+  /// The bill creator sends a payment reminder to every included participant
+  /// who is still `unpaid` or `partially_paid`.
+  ///
+  /// Unlike the other notification helpers, the dispatch is awaited here —
+  /// the notification *is* the operation, so the result snackbar is only
+  /// surfaced once the proxy round-trip has finished.
+  Future<bool> remindOutstandingParticipants({
+    required String groupId,
+    required String billId,
+  }) async {
+    state = const PaymentActionLoading();
+    try {
+      final bill = await _billRepo.getBill(groupId, billId);
+      if (bill == null) {
+        state = const PaymentActionError('Could not load this bill.');
+        return false;
+      }
+
+      final recipients =
+          bill.remindableParticipants.map((p) => p.id).toList();
+      if (recipients.isEmpty) {
+        state = const PaymentActionError('Everyone has already paid.');
+        return false;
+      }
+
+      final delivered = await _dispatcher.dispatch(
+        type: NotificationType.paymentReminder,
+        targetUserIds: recipients,
+        params: {
+          'actorName': _actorName,
+          'billTitle': bill.title,
+          'groupName': bill.groupName,
+          'groupId': groupId,
+          'billId': billId,
+        },
+      );
+
+      // The proxy rejects unknown notification types with a 400 (e.g. when
+      // the deployed proxy is older than the app), so never report success
+      // unless the request was actually accepted.
+      if (!delivered) {
+        state = const PaymentActionError(
+          'Could not deliver the reminder. Please try again.',
+        );
+        return false;
+      }
+
+      state = PaymentActionSuccess(
+        recipients.length == 1
+            ? 'Reminder sent to 1 member.'
+            : 'Reminder sent to ${recipients.length} members.',
+      );
+      return true;
+    } on FirebaseException catch (e) {
+      state = PaymentActionError(
+        switch (e.code) {
+          'permission-denied' =>
+            'You don\'t have permission to update this bill.',
+          'unavailable' => 'Firestore is temporarily unavailable. Try again.',
+          'network-request-failed' =>
+            'Network error. Check your internet connection.',
+          _ => 'Could not send the reminder. Please try again.',
+        },
+      );
+      return false;
+    } catch (_) {
+      state = const PaymentActionError(
+        'Could not send the reminder. Please try again.',
+      );
+      return false;
     }
   }
 

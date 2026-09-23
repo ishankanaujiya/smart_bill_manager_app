@@ -80,6 +80,30 @@ service cloud.firestore {
 
 
     // -------------------------
+    // NOTIFICATIONS
+    // -------------------------
+    // In-app notification inbox. Documents are created by the Vercel
+    // notification proxy using the Admin SDK (which bypasses these rules),
+    // one document per recipient, with `user_id` set to the recipient's uid.
+    match /notifications/{notificationId} {
+
+      // A user can only read their own notifications.
+      allow read: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
+
+      // A user can only flip the `read` flag on their own notifications.
+      // No other field may be changed from the client.
+      allow update: if request.auth != null
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+
+      // Creation and deletion happen exclusively through the proxy
+      // (Admin SDK), never from a client.
+      allow create, delete: if false;
+    }
+
+
+    // -------------------------
     // DEFAULT DENY
     // -------------------------
     match /{document=**} {

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/notifications/notification_dispatcher.dart';
+import '../../../auth/presentation/state/auth_providers.dart';
 import '../../data/repositories/group_repository_impl.dart';
 import '../../data/service/cloudinary_service.dart';
 import '../../domain/entities/group.dart';
@@ -149,7 +149,9 @@ class CreateGroupNotifier extends StateNotifier<CreateGroupState> {
       if (recipientIds.isNotEmpty) {
         final actorName =
             FirebaseAuth.instance.currentUser?.displayName?.trim();
-        unawaited(_dispatcher.dispatch(
+        // Fire-and-forget: the group is already saved, so the delivery
+        // outcome is intentionally discarded.
+        _dispatcher.dispatch(
           type: NotificationType.groupAdded,
           targetUserIds: recipientIds,
           params: {
@@ -157,7 +159,7 @@ class CreateGroupNotifier extends StateNotifier<CreateGroupState> {
             'groupName': trimmedName,
             'groupId': saved.id,
           },
-        ));
+        ).ignore();
       }
 
       return true;
@@ -203,8 +205,24 @@ final createGroupProvider =
 
 /// Provides the Firebase Auth UID of the currently signed-in user, or
 /// `null` when nobody is signed in.
+///
+/// This is **reactive**: it watches [authStateStreamProvider] so that signing
+/// out and signing back in as a different user immediately yields the new uid.
+///
+/// A plain `Provider` that simply returned `FirebaseAuth.instance.currentUser`
+/// would cache the first uid it observed for the lifetime of the container
+/// (the app keeps one `ProviderScope` and navigates imperatively, so it is
+/// never recreated). Every per-user stream — groups, balance, notifications —
+/// would then keep returning the *previous* user's data after an account
+/// switch.
 final currentUidProvider = Provider<String?>((ref) {
-  return FirebaseAuth.instance.currentUser?.uid;
+  final asyncUser = ref.watch(authStateStreamProvider);
+  // While the auth stream is still loading (e.g. a warm start), fall back to
+  // the synchronously available user so we don't briefly report "signed out".
+  if (asyncUser.isLoading) {
+    return FirebaseAuth.instance.currentUser?.uid;
+  }
+  return asyncUser.valueOrNull?.uid;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

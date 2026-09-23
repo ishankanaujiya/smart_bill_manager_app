@@ -2,15 +2,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
-import '../../features/expenses/data/repositories/bill_repository_impl.dart';
-import '../../features/expenses/presentation/view/bill_details_screen.dart';
-import '../../features/groups/data/repositories/group_repository_impl.dart';
-import '../../features/groups/presentation/view/group_details_screen.dart';
+import 'notification_router.dart';
 
 class NotificationService {
   NotificationService._();
 
   static final NotificationService instance = NotificationService._();
+
+  /// Resolves a tapped notification's payload to the screen to open. Shared
+  /// with the in-app notification list so both behave identically.
+  final NotificationRouter _router = NotificationRouter();
 
   static const String _oneSignalAppId =
       '23e8d468-eca9-429a-aee2-5b6084d787c4';
@@ -107,80 +108,6 @@ class NotificationService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return; // user signed out — don't navigate
 
-    try {
-      if (type == 'groupAdded') {
-        // Navigate to the Groups tab inside AppShell. We push a lightweight
-        // marker widget that replaces itself with GroupDetailsScreen once the
-        // group is loaded, but the simplest approach is to just ensure the
-        // user is on the Groups tab. We navigate to GroupDetailsScreen
-        // directly if groupId is provided and we can load the group.
-        final groupId = data['groupId'] as String?;
-        if (groupId != null && groupId.isNotEmpty) {
-          await _pushGroupDetails(
-            nav: nav,
-            groupId: groupId,
-            currentUserId: uid,
-          );
-        }
-        // If groupId is missing, tapping just opens the app — acceptable.
-        return;
-      }
-
-      // All bill-related types require both groupId and billId.
-      final groupId = data['groupId'] as String?;
-      final billId = data['billId'] as String?;
-      if (groupId == null || groupId.isEmpty || billId == null || billId.isEmpty) {
-        return;
-      }
-
-      await _pushBillDetails(
-        nav: nav,
-        groupId: groupId,
-        billId: billId,
-        currentUserId: uid,
-      );
-    } catch (e) {
-      debugPrint('[NotificationService] _handleNotificationClick error: $e');
-    }
-  }
-
-  Future<void> _pushGroupDetails({
-    required NavigatorState nav,
-    required String groupId,
-    required String currentUserId,
-  }) async {
-    final repo = GroupRepositoryImpl();
-    final group = await repo.getGroup(groupId);
-    if (group == null) return;
-    nav.push(
-      MaterialPageRoute<void>(
-        builder: (_) => GroupDetailsScreen(
-          group: group,
-          currentUserId: currentUserId,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pushBillDetails({
-    required NavigatorState nav,
-    required String groupId,
-    required String billId,
-    required String currentUserId,
-  }) async {
-    final billRepo = BillRepositoryImpl();
-    final bill = await billRepo.getBill(groupId, billId);
-    if (bill == null) return;
-
-    // We also need a Group to open GroupDetailsScreen as a parent, but
-    // BillDetailsScreen can stand alone — push it directly.
-    nav.push(
-      MaterialPageRoute<void>(
-        builder: (_) => BillDetailsScreen(
-          bill: bill,
-          currentUserId: currentUserId,
-        ),
-      ),
-    );
+    await _router.open(nav: nav, currentUserId: uid, data: data);
   }
 }

@@ -99,6 +99,22 @@ class AuthRepositoryImpl implements AuthRepository {
   User? get currentUser => _auth.currentUser;
 
   @override
+  Future<PasswordResetResult> sendPasswordResetEmail({
+    required String email,
+  }) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+      return const PasswordResetSent();
+    } on FirebaseAuthException catch (e) {
+      return PasswordResetFailure(_mapAuthError(e));
+    } catch (_) {
+      return const PasswordResetFailure(
+        'An unexpected error occurred. Please try again.',
+      );
+    }
+  }
+
+  @override
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
   @override
@@ -112,6 +128,8 @@ class AuthRepositoryImpl implements AuthRepository {
     switch (e.code) {
       case 'invalid-email':
         return 'The email address is not valid.';
+      case 'missing-email':
+        return 'Please enter your email address.';
       case 'user-disabled':
         return 'This account has been disabled.';
       case 'user-not-found':

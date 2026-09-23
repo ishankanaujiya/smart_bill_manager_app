@@ -12,6 +12,8 @@ import '../../../../core/widgets/app_field_error.dart';
 import '../../../users/domain/entities/app_user.dart';
 import '../state/auth_providers.dart';
 import '../widget/auth_header.dart';
+import '../widget/auth_primary_button.dart';
+import 'forgot_password_screen.dart';
 import 'registration_details_screen.dart';
 import 'registration_profile_screen.dart';
 
@@ -351,7 +353,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
-                                  onPressed: () {},
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => ForgotPasswordScreen(
+                                          initialEmail:
+                                              _emailController.text.trim(),
+                                        ),
+                                      ),
+                                    );
+                                  },
                                   style: TextButton.styleFrom(
                                     padding: EdgeInsets.zero,
                                     minimumSize: Size.zero,
@@ -399,7 +410,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                               const SizedBox(height: AppSpacing.xl),
 
                               // Sign in CTA
-                              _SignInButton(
+                              AuthPrimaryButton(
+                                label: 'Sign in',
                                 onPressed: _onSignIn,
                                 isLoading: ref.watch(authActionProvider)
                                     is AuthActionLoading,
@@ -773,105 +785,6 @@ class _BrandCheckbox extends StatelessWidget {
 }
 
 /// Full-width "Sign in" primary button.
-/// Full-width "Sign in" primary button with a blinking blur glow.
-///
-/// A soft coloured shadow behind the button pulses in and out using a
-/// sine-bell curve, creating a "blinking blur" effect that draws attention
-/// to the CTA without altering the button's own background colour.
-class _SignInButton extends StatefulWidget {
-  const _SignInButton({required this.onPressed, this.isLoading = false});
-
-  final VoidCallback onPressed;
-  final bool isLoading;
-
-  @override
-  State<_SignInButton> createState() => _SignInButtonState();
-}
-
-class _SignInButtonState extends State<_SignInButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _blurController;
-  late final Animation<double> _blur;
-
-  @override
-  void initState() {
-    super.initState();
-    _blurController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    )..repeat();
-
-    _blur = CurvedAnimation(
-      parent: _blurController,
-      curve: Curves.easeInOutSine,
-    );
-  }
-
-  @override
-  void dispose() {
-    _blurController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: AnimatedBuilder(
-        animation: _blur,
-        builder: (context, child) {
-          // Smooth sine-bell: 0 → 1 → 0 with no cusps.
-          // (1 - cos(2πt)) / 2 gives a perfect 0 → 1 → 0 wave.
-          final pulse = (1 - math.cos(math.pi * 2 * _blur.value)) * 0.5;
-
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: AppRadius.radiusMd,
-              boxShadow: [
-                BoxShadow(
-                  color: colorScheme.primary.withValues(
-                    alpha: 0.15 + 0.40 * pulse,
-                  ),
-                  blurRadius: 6 + 20 * pulse,
-                  spreadRadius: 1 + 2 * pulse,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: child,
-          );
-        },
-        child: FilledButton(
-          onPressed: widget.isLoading ? null : widget.onPressed,
-          style: FilledButton.styleFrom(
-            backgroundColor: colorScheme.primary,
-            foregroundColor: colorScheme.onPrimary,
-            shape: RoundedRectangleBorder(
-              borderRadius: AppRadius.radiusMd,
-            ),
-            textStyle: AppTextStyles.labelLarge.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          child: widget.isLoading
-              ? SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: colorScheme.onPrimary,
-                  ),
-                )
-              : const Text('Sign in'),
-        ),
-      ),
-    );
-  }
-}
-
 /// "or continue with" row divider.
 class _OrDivider extends StatelessWidget {
   @override

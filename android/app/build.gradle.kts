@@ -33,6 +33,8 @@ android {
         // minSdk 21+ is required by flutter_local_notifications (transitive
         // dep of onesignal_flutter).
         minSdk = maxOf(flutter.minSdkVersion, 21)
+
+        
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

@@ -154,6 +154,8 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
     final included = bill.includedParticipants;
     final date = bill.date ?? bill.createdAt;
     final isCreator = widget.currentUserId == bill.createdBy;
+    // Participants the creator can still nudge about an outstanding share.
+    final remindable = bill.remindableParticipants;
     // Whether at least one row offers a tappable status (the current user
     // has an unpaid/rejected share). Drives the animated "tap to update"
     // hint pointer next to the Status column header.
@@ -314,6 +316,19 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
                       bill: bill,
                       onPrimary: colorScheme.onPrimary,
                     ),
+                    // Reminder action — creator only, and only while at
+                    // least one member still owes their share.
+                    if (isCreator && remindable.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      _RemindMembersButton(
+                        count: remindable.length,
+                        onPrimary: colorScheme.onPrimary,
+                        onTap: () => _showRemindDialog(
+                          bill: bill,
+                          recipients: remindable,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -707,6 +722,36 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen>
           approved: approved,
           receivedAmount: receivedAmount,
           verifiedBy: widget.currentUserId,
+        );
+  }
+
+  /// Opens a confirmation dialog listing the members who will be reminded
+  /// before dispatching the notification.
+  void _showRemindDialog({
+    required Bill bill,
+    required List<BillParticipant> recipients,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => _RemindConfirmDialog(
+        bill: bill,
+        recipients: recipients,
+        onSend: () {
+          Navigator.of(context).pop();
+          _sendReminder(bill);
+        },
+      ),
+    );
+  }
+
+  /// Sends a payment reminder to the bill's outstanding participants.
+  ///
+  /// The resulting success/error snackbar is surfaced by the
+  /// [paymentActionProvider] listener in [build].
+  Future<void> _sendReminder(Bill bill) async {
+    await ref.read(paymentActionProvider.notifier).remindOutstandingParticipants(
+          groupId: bill.groupId,
+          billId: bill.id,
         );
   }
 }
@@ -1232,6 +1277,511 @@ class _ProgressFill extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Reminder button (inside the gradient summary card)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Creator-only action shown at the bottom of the gradient bill summary card.
+///
+/// Displays how many members still owe their share and, when tapped, opens
+/// [_RemindConfirmDialog] before dispatching the push reminders. Styled as a
+/// translucent `onPrimary`-tinted pill so it reads as part of the card, with
+/// the same press-scale feedback used by [_ParticipantRow].
+class _RemindMembersButton extends StatefulWidget {
+  const _RemindMembersButton({
+    required this.count,
+    required this.onPrimary,
+    required this.onTap,
+  });
+
+  final int count;
+  final Color onPrimary;
+  final VoidCallback onTap;
+
+  @override
+  State<_RemindMembersButton> createState() => _RemindMembersButtonState();
+}
+
+class _RemindMembersButtonState extends State<_RemindMembersButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+      lowerBound: 0.96,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onPrimary = widget.onPrimary;
+    final label = widget.count == 1
+        ? 'Remind 1 member'
+        : 'Remind ${widget.count} members';
+
+    return ScaleTransition(
+      scale: _press,
+      child: GestureDetector(
+        onTapDown: (_) => _press.reverse(),
+        onTapUp: (_) {
+          _press.forward();
+          widget.onTap();
+        },
+        onTapCancel: () => _press.forward(),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: onPrimary.withValues(alpha: 0.18),
+            borderRadius: AppRadius.radiusLg,
+            border: Border.all(
+              color: onPrimary.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.notifications_active_rounded,
+                size: 18,
+                color: onPrimary,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: onPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 16,
+                color: onPrimary.withValues(alpha: 0.85),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Confirmation dialog shown before a reminder is dispatched.
+///
+/// A gradient hero header sets the intent, then the members who will receive
+/// the notification are listed as cards — each with their avatar and the
+/// outstanding amount — so the creator knows exactly who is about to be
+/// nudged. A reassurance strip notes that members who have already paid are
+/// skipped.
+class _RemindConfirmDialog extends StatelessWidget {
+  const _RemindConfirmDialog({
+    required this.bill,
+    required this.recipients,
+    required this.onSend,
+  });
+
+  final Bill bill;
+  final List<BillParticipant> recipients;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final gradient = isDark
+        ? AppColors.darkPrimaryGradient
+        : AppColors.lightPrimaryGradient;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xl,
+        vertical: AppSpacing.xxl,
+      ),
+      backgroundColor: cs.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.radiusXxl),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0.94, end: 1.0),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutBack,
+        builder: (context, scale, child) => Transform.scale(
+          scale: scale,
+          child: child,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildHeader(gradient, recipients.length),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    AppSpacing.lg,
+                    AppSpacing.xl,
+                    AppSpacing.lg,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'WHO GETS REMINDED',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      for (final participant in recipients)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                          child: _buildRecipientTile(cs, isDark, participant),
+                        ),
+                      const SizedBox(height: AppSpacing.xs),
+                      _buildReassurance(cs, isDark),
+                    ],
+                  ),
+                ),
+              ),
+              _buildActions(context, cs, gradient),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Gradient hero header ───────────────────────────────────────────────────
+
+  Widget _buildHeader(LinearGradient gradient, int count) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(gradient: gradient),
+      child: Stack(
+        children: [
+          // Decorative translucent circles for depth.
+          Positioned(
+            right: -34,
+            top: -40,
+            child: _decorBlob(130, 0.12),
+          ),
+          Positioned(
+            left: -30,
+            bottom: -50,
+            child: _decorBlob(100, 0.08),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.white.withValues(alpha: 0.22),
+                    borderRadius: AppRadius.radiusLg,
+                    border: Border.all(
+                      color: AppColors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_active_rounded,
+                    color: AppColors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'Send Payment Reminder',
+                  style: AppTextStyles.titleLarge.copyWith(
+                    color: AppColors.white,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  count == 1
+                      ? '1 member will be notified right away'
+                      : '$count members will be notified right away',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.white.withValues(alpha: 0.92),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _decorBlob(double size, double alpha) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.white.withValues(alpha: alpha),
+      ),
+    );
+  }
+
+  // ── Recipient card ─────────────────────────────────────────────────────────
+
+  Widget _buildRecipientTile(
+    ColorScheme cs,
+    bool isDark,
+    BillParticipant participant,
+  ) {
+    final share = bill.shareFor(participant.id);
+    final paid = bill.paymentFor(participant.id).amountPaid;
+    final outstanding = (share - paid).clamp(0.0, double.infinity);
+    final accent = _accentFor(participant.id, isDark);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.35 : 0.5),
+        borderRadius: AppRadius.radiusLg,
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          _buildAvatar(participant, accent),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  participant.bestDisplayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.titleSmall.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Payment pending',
+                  style: AppTextStyles.caption.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                AppConstants.formatCurrency(outstanding, withSymbol: true),
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: cs.error,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                'due',
+                style: AppTextStyles.caption.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(BillParticipant participant, Color accent) {
+    final picture = participant.profilePicture;
+    final hasPicture = picture != null && picture.isNotEmpty;
+
+    return Container(
+      width: 44,
+      height: 44,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: accent.withValues(alpha: 0.16),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: hasPicture
+          ? Image.network(
+              picture,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _buildInitials(participant, accent),
+            )
+          : _buildInitials(participant, accent),
+    );
+  }
+
+  Widget _buildInitials(BillParticipant participant, Color accent) {
+    return Center(
+      child: Text(
+        participant.initials.isEmpty ? '?' : participant.initials,
+        style: AppTextStyles.labelLarge.copyWith(
+          color: accent,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  /// Deterministic accent colour per participant, so a member keeps the same
+  /// avatar tint across the dialog.
+  Color _accentFor(String id, bool isDark) {
+    final palette =
+        isDark ? AppColors.chartColorsDark : AppColors.chartColorsLight;
+    final hash = id.codeUnits.fold<int>(0, (sum, unit) => sum + unit);
+    return palette[hash % palette.length];
+  }
+
+  // ── Reassurance strip ──────────────────────────────────────────────────────
+
+  Widget _buildReassurance(ColorScheme cs, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer.withValues(alpha: isDark ? 0.16 : 0.35),
+        borderRadius: AppRadius.radiusLg,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.verified_rounded, size: 18, color: cs.primary),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Members who have already paid will not be notified.',
+              style: AppTextStyles.caption.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  Widget _buildActions(
+    BuildContext context,
+    ColorScheme cs,
+    LinearGradient gradient,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        0,
+        AppSpacing.xl,
+        AppSpacing.xl,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: cs.onSurface,
+                side: BorderSide(color: cs.outlineVariant),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppRadius.radiusLg,
+                ),
+              ),
+              child: Text(
+                'Cancel',
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            flex: 2,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: gradient,
+                borderRadius: AppRadius.radiusLg,
+                boxShadow: [
+                  BoxShadow(
+                    color: cs.primary.withValues(alpha: 0.32),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: AppColors.transparent,
+                child: InkWell(
+                  onTap: onSend,
+                  borderRadius: AppRadius.radiusLg,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.md,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.send_rounded,
+                          size: 18,
+                          color: AppColors.white,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(
+                          'Send Reminder',
+                          style: AppTextStyles.labelLarge.copyWith(
+                            color: AppColors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Payment status pill (for gradient cards)
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1601,9 +2151,15 @@ Color _methodAccent(BillPaymentMethod m) {
   };
 }
 
-String? _methodLogo(BillPaymentMethod m) {
+/// Brand logo asset for a payment method, resolved for the current theme.
+///
+/// eSewa ships a light-mode mark (dark artwork that reads on light surfaces)
+/// alongside the original, which is used on dark surfaces.
+String? _methodLogo(BillPaymentMethod m, {required bool isDark}) {
   return switch (m) {
-    BillPaymentMethod.esewa => 'assets/images/esewa.png',
+    BillPaymentMethod.esewa => isDark
+        ? 'assets/images/esewa.png'
+        : 'assets/images/esewa_light_mode.png',
     BillPaymentMethod.khalti => 'assets/images/khalti.png',
     BillPaymentMethod.bank => null,
   };
@@ -1797,7 +2353,7 @@ class _PaymentMethodCardState extends State<_PaymentMethodCard>
   Widget build(BuildContext context) {
     final cs = widget.colorScheme;
     final accent = _methodAccent(widget.method);
-    final logo = _methodLogo(widget.method);
+    final logo = _methodLogo(widget.method, isDark: widget.isDark);
 
     return ScaleTransition(
       scale: _press,

@@ -10,6 +10,24 @@ import '../../domain/entities/bill.dart';
 import '../state/create_bill_provider.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Payment method brand assets
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Brand logo asset for a payment method, resolved for the current theme.
+///
+/// eSewa ships a light-mode mark (dark artwork that reads on light surfaces)
+/// alongside the original, which is used on dark surfaces.
+String? _paymentMethodLogo(BillPaymentMethod method, {required bool isDark}) {
+  return switch (method) {
+    BillPaymentMethod.esewa => isDark
+        ? 'assets/images/esewa.png'
+        : 'assets/images/esewa_light_mode.png',
+    BillPaymentMethod.khalti => 'assets/images/khalti.png',
+    BillPaymentMethod.bank => null,
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Payment Options Card
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -326,7 +344,7 @@ class _MethodSelectorRow extends StatelessWidget {
       children: [
         _MethodChip(
           label: 'eSewa',
-          icon: 'assets/images/esewa.png',
+          icon: _paymentMethodLogo(BillPaymentMethod.esewa, isDark: isDark),
           color: const Color(0xFF60BB46),
           isSelected: hasEsewa,
           isDark: isDark,
@@ -581,13 +599,8 @@ class _PaymentEntryState extends State<_PaymentEntry>
     };
   }
 
-  String? get _logoPath {
-    return switch (entry.method) {
-      BillPaymentMethod.esewa => 'assets/images/esewa.png',
-      BillPaymentMethod.khalti => 'assets/images/khalti.png',
-      BillPaymentMethod.bank => null,
-    };
-  }
+  String? get _logoPath =>
+      _paymentMethodLogo(entry.method, isDark: isDark);
 
   @override
   Widget build(BuildContext context) {

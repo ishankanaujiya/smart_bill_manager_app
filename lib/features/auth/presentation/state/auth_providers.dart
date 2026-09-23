@@ -59,12 +59,21 @@ final authStateStreamProvider = StreamProvider<User?>((ref) {
 /// Returns `null` when no user is signed in or no Firestore document exists.
 /// This is used to check whether the user's profile is complete after
 /// Google sign-in.
+///
+/// Reactive: watches [authStateStreamProvider] so that signing out and signing
+/// back in as a different user refreshes the profile instead of returning the
+/// previous user's cached document (the app keeps one `ProviderScope`).
 final currentAppUserProvider = FutureProvider<AppUser?>((ref) async {
-  final user = ref.read(authRepositoryProvider).currentUser;
-  if (user == null) return null;
+  final asyncUser = ref.watch(authStateStreamProvider);
+  // While the auth stream is still loading (e.g. a warm start), fall back to
+  // the synchronously available user so we don't briefly report "signed out".
+  final uid = asyncUser.isLoading
+      ? ref.read(authRepositoryProvider).currentUser?.uid
+      : asyncUser.valueOrNull?.uid;
+  if (uid == null) return null;
 
   final userRepo = ref.read(userRepositoryProvider);
-  return userRepo.getUser(user.uid);
+  return userRepo.getUser(uid);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
