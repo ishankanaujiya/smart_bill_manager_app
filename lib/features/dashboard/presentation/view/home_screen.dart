@@ -14,6 +14,10 @@ import '../../../notifications/presentation/state/notification_providers.dart';
 import '../../../notifications/presentation/view/notifications_screen.dart';
 import '../../../users/domain/entities/app_user.dart';
 
+/// Placeholder shown in place of monetary amounts while the user has chosen to
+/// hide them (toggled by the eye button on the financial summary card).
+const String _hiddenAmount = '${AppConstants.currencySymbol} xxxx.xx';
+
 /// Home tab for the app shell.
 ///
 /// Displays a greeting header, financial summary card, quick stat tiles,
@@ -34,6 +38,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   AnimationController? _entranceCtrl;
   AnimationController? _ambientCtrl;
   AnimationController? _settleBtnCtrl;
+
+  /// Whether the monetary amounts on this screen are masked.
+  ///
+  /// Toggled by the eye button in the financial summary card; masks the net
+  /// balance and the three quick-stat amounts.
+  bool _amountsHidden = false;
 
   /// Lazily creates the entrance controller on first access so that hot
   /// reload (which doesn't re-run initState) doesn't crash with a
@@ -357,18 +367,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             // Title row.
                             Row(
                               children: [
-                                Text(
-                                  'Your Financial Summary',
-                                  style: AppTextStyles.bodyLarge.copyWith(
-                                    color: contentSoft,
-                                    fontWeight: FontWeight.w600,
+                                Expanded(
+                                  child: Text(
+                                    'Your Financial Summary',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyles.bodyLarge.copyWith(
+                                      color: contentSoft,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
-                                const Spacer(),
-                                Icon(
-                                  Icons.remove_red_eye_outlined,
+                                IconButton(
+                                  onPressed: () => setState(
+                                    () => _amountsHidden = !_amountsHidden,
+                                  ),
+                                  icon: Icon(
+                                    _amountsHidden
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.remove_red_eye_outlined,
+                                  ),
                                   color: contentMuted,
-                                  size: 20,
+                                  iconSize: 20,
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 32,
+                                    minHeight: 32,
+                                  ),
+                                  tooltip: _amountsHidden
+                                      ? 'Show amounts'
+                                      : 'Hide amounts',
                                 ),
                               ],
                             ),
@@ -389,13 +418,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 Text(
-                                  AppConstants.formatCurrency(
-                                    netBalance.abs(),
-                                    withSymbol: true,
-                                  ),
+                                  _amountsHidden
+                                      ? _hiddenAmount
+                                      : AppConstants.formatCurrency(
+                                          netBalance.abs(),
+                                          withSymbol: true,
+                                        ),
                                   style: AppTextStyles.headlineLarge.copyWith(
                                     color: contentColor,
-                                    fontWeight: FontWeight.w800,
+                                    fontSize: 29,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.sm),
@@ -542,11 +574,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   ) {
     final balance = balanceAsync.valueOrNull ?? const UserBalance.zero();
 
+    // Masks the amount while the user has hidden the balances.
+    String amountOrHidden(double value) => _amountsHidden
+        ? _hiddenAmount
+        : AppConstants.formatCurrency(value, withSymbol: true);
+
     final stats = [
       _QuickStat(
         label: "You're Owed",
-        amount: AppConstants.formatCurrency(balance.youAreOwed,
-            withSymbol: true),
+        amount: amountOrHidden(balance.youAreOwed),
         caption:
             'Across ${balance.youAreOwedGroupCount} group${balance.youAreOwedGroupCount == 1 ? '' : 's'}',
         icon: Icons.arrow_downward,
@@ -554,8 +590,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
       _QuickStat(
         label: 'You Owe',
-        amount:
-            AppConstants.formatCurrency(balance.youOwe, withSymbol: true),
+        amount: amountOrHidden(balance.youOwe),
         caption:
             'Across ${balance.youOweGroupCount} group${balance.youOweGroupCount == 1 ? '' : 's'}',
         icon: Icons.arrow_upward,
@@ -563,9 +598,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
       _QuickStat(
         label: 'Net Balance',
-        amount: AppConstants.formatCurrency(
-            (balance.youAreOwed - balance.youOwe).abs(),
-            withSymbol: true),
+        amount: amountOrHidden((balance.youAreOwed - balance.youOwe).abs()),
         caption: (balance.youAreOwed - balance.youOwe) >= 0
             ? "You're ahead"
             : "You're behind",
