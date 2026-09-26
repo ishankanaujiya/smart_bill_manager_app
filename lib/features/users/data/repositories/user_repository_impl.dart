@@ -82,15 +82,12 @@ class UserRepositoryImpl implements UserRepository {
   @override
   Future<void> updateUser(AppUser user) async {
     final model = UserModel.fromEntity(user);
-    // Only write the mutable fields; keep created_at untouched.
-    await _collection.doc(user.id).set({
-      'updated_at': FieldValue.serverTimestamp(),
-      'full_name': model.fullName,
-      'email': model.email,
-      'phone_number': model.phoneNumber,
-      'display_name': model.displayName,
-      'profile_picture': model.profilePicture,
-    }, SetOptions(merge: true));
+    // Merge only the mutable fields; `created_at` is left untouched. Null
+    // optional fields are deleted (see [UserModel.toUpdateMap]) so that
+    // clearing a value — e.g. removing the profile picture — is persisted.
+    await _collection
+        .doc(user.id)
+        .set(model.toUpdateMap(), SetOptions(merge: true));
   }
 
   @override

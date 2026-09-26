@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
+import '../../../../core/widgets/photo_preview.dart';
 import '../../../auth/presentation/state/auth_providers.dart';
 import '../../../auth/presentation/view/welcome_screen.dart';
 import 'appearance_screen.dart';
@@ -287,6 +288,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 // Hero header card
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// [Hero] tag shared by the header avatar and the full-screen photo preview so
+/// the image flies between the two when the avatar is tapped.
+const _profileAvatarHeroTag = 'profile-avatar-hero';
+
 class _ProfileHeaderCard extends StatelessWidget {
   const _ProfileHeaderCard({
     required this.fullName,
@@ -314,6 +319,20 @@ class _ProfileHeaderCard extends StatelessWidget {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
+  bool get _hasPhoto =>
+      profilePictureUrl != null && profilePictureUrl!.isNotEmpty;
+
+  /// Tapping the avatar opens the photo preview. When the user has no photo,
+  /// the preview shows their initials instead.
+  void _onAvatarTap(BuildContext context) {
+    showPhotoPreview(
+      context,
+      imageUrl: profilePictureUrl,
+      initials: _initials,
+      heroTag: _hasPhoto ? _profileAvatarHeroTag : null,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final gradient = isDark
@@ -338,6 +357,8 @@ class _ProfileHeaderCard extends StatelessWidget {
                 initials: _initials,
                 profilePictureUrl: profilePictureUrl,
                 isDark: isDark,
+                heroTag: _profileAvatarHeroTag,
+                onTap: () => _onAvatarTap(context),
               ),
               const SizedBox(width: AppSpacing.lg),
               Expanded(
@@ -418,22 +439,55 @@ class _ProfileHeaderCard extends StatelessWidget {
 // Avatar
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _Avatar extends StatelessWidget {
+class _Avatar extends StatefulWidget {
   const _Avatar({
     required this.initials,
     required this.isDark,
     this.profilePictureUrl,
+    this.heroTag,
+    this.onTap,
   });
 
   final String initials;
   final String? profilePictureUrl;
   final bool isDark;
+  final Object? heroTag;
+  final VoidCallback? onTap;
+
+  @override
+  State<_Avatar> createState() => _AvatarState();
+}
+
+class _AvatarState extends State<_Avatar> {
+  bool _pressed = false;
+
+  bool get _hasPhoto =>
+      widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty;
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
 
   @override
   Widget build(BuildContext context) {
     const size = 72.0;
 
-    return Container(
+    Widget content = _hasPhoto
+        ? Image.network(
+            widget.profilePictureUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                _InitialsLabel(initials: widget.initials),
+          )
+        : _InitialsLabel(initials: widget.initials);
+
+    // Only the photo participates in the Hero flight, so the thumbnail's
+    // circular clip is handed to the preview's shuttle during the transition.
+    if (_hasPhoto && widget.heroTag != null) {
+      content = Hero(tag: widget.heroTag!, child: content);
+    }
+
+    final avatar = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -452,13 +506,27 @@ class _Avatar extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: profilePictureUrl != null && profilePictureUrl!.isNotEmpty
-          ? Image.network(
-              profilePictureUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _InitialsLabel(initials: initials),
-            )
-          : _InitialsLabel(initials: initials),
+      child: content,
+    );
+
+    if (widget.onTap == null) return avatar;
+
+    return Semantics(
+      button: true,
+      label: _hasPhoto ? 'View profile photo' : 'View profile',
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedScale(
+          scale: _pressed ? 0.93 : 1.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          child: avatar,
+        ),
+      ),
     );
   }
 }

@@ -83,6 +83,23 @@ class UserModel {
     };
   }
 
+  /// Serializes the mutable fields for a merge update.
+  ///
+  /// Optional fields are mapped to [FieldValue.delete] when they are `null`,
+  /// so clearing a value (e.g. removing the profile picture) removes the field
+  /// from the document instead of leaving the previous value behind.
+  /// `created_at` is intentionally omitted — it must never be rewritten.
+  Map<String, dynamic> toUpdateMap() {
+    return <String, dynamic>{
+      'updated_at': FieldValue.serverTimestamp(),
+      'full_name': fullName,
+      'email': email,
+      'phone_number': phoneNumber ?? FieldValue.delete(),
+      'display_name': displayName ?? FieldValue.delete(),
+      'profile_picture': profilePicture ?? FieldValue.delete(),
+    };
+  }
+
   /// Converts to the domain entity.
   AppUser toEntity() {
     return AppUser(

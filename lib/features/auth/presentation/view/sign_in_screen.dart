@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,7 +26,7 @@ import 'registration_profile_screen.dart';
 ///  - "Forgot password?" link
 ///  - "Remember me" checkbox
 ///  - Primary "Sign in" button
-///  - "or continue with" divider + Google / Apple social buttons
+///  - "or continue with" divider + Google social button
 ///  - "Don't have an account? Register" footer
 ///  - Terms of Service / Privacy Policy legal footer
 ///
@@ -129,27 +127,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
     return emailErr == null && passErr == null;
   }
 
-  /// Validates the email field live as the user types.
-  ///
-  /// Only shows an error once the user has typed enough to look like an
-  /// email attempt (contains '@'). Before that, no error is shown — the
-  /// full validation runs on submit.
-  void _onEmailChanged() {
-    final input = _emailController.text.trim();
-    if (input.isEmpty) {
-      if (_emailError != null) setState(() => _emailError = null);
-      return;
-    }
-
-    // Only validate once the user has typed an '@' — before that they're
-    // still entering the local part and we don't want to be intrusive.
-    if (!input.contains('@')) {
-      if (_emailError != null) setState(() => _emailError = null);
-      return;
-    }
-
-    final err = AuthValidator.email(input);
-    if (err != _emailError) setState(() => _emailError = err);
+  void _clearEmailError() {
+    if (_emailError != null) setState(() => _emailError = null);
   }
 
   void _clearPasswordError() {
@@ -200,41 +179,6 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
     } else {
       _navigateToHome();
     }
-  }
-
-  /// Placeholder for Apple Sign-in.
-  ///
-  /// Apple Sign-in isn't wired up yet, so we surface an animated snackbar
-  /// letting the user know it's coming in a future release instead of
-  /// silently no-op'ing.
-  void _showAppleSignInComingSoon() {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              _PulsingAppleIcon(
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(
-                  'Apple Sign-in is coming in the next release. '
-                  'Please use email or Google for now.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
-        ),
-      );
   }
 
   void _navigateToHome() {
@@ -322,7 +266,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                                 focusNode: _emailFocus,
                                 nextFocus: _passwordFocus,
                                 errorText: _emailError,
-                                onChanged: _onEmailChanged,
+                                onChanged: _clearEmailError,
                               ),
 
                               const SizedBox(height: AppSpacing.lg),
@@ -424,37 +368,18 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
 
                               const SizedBox(height: AppSpacing.lg),
 
-                              // Social buttons
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _SocialButton(
-                                      label: 'Google',
-                                      icon: SvgPicture.asset(
-                                        'assets/icons/google.svg',
-                                        width: 20,
-                                        height: 20,
-                                      ),
-                                      onTap: _onGoogleSignIn,
-                                    ),
+                              // Social button
+                              SizedBox(
+                                width: double.infinity,
+                                child: _SocialButton(
+                                  label: 'Google',
+                                  icon: SvgPicture.asset(
+                                    'assets/icons/google.svg',
+                                    width: 20,
+                                    height: 20,
                                   ),
-                                  const SizedBox(width: AppSpacing.md),
-                                  Expanded(
-                                    child: _SocialButton(
-                                      label: 'Apple',
-                                      icon: SvgPicture.asset(
-                                        'assets/icons/apple.svg',
-                                        width: 20,
-                                        height: 20,
-                                        colorFilter: ColorFilter.mode(
-                                          colorScheme.onSurface,
-                                          BlendMode.srcIn,
-                                        ),
-                                      ),
-                                      onTap: _showAppleSignInComingSoon,
-                                    ),
-                                  ),
-                                ],
+                                  onTap: _onGoogleSignIn,
+                                ),
                               ),
 
                               const SizedBox(height: AppSpacing.xl),
@@ -919,117 +844,3 @@ class _LegalFooter extends StatelessWidget {
   }
 }
 
-/// A small Apple glyph wrapped in a continuously spinning arc ring,
-/// used as the loading indicator on the "coming soon" snackbar.
-class _PulsingAppleIcon extends StatefulWidget {
-  const _PulsingAppleIcon({required this.color});
-
-  final Color color;
-
-  @override
-  State<_PulsingAppleIcon> createState() => _PulsingAppleIconState();
-}
-
-class _PulsingAppleIconState extends State<_PulsingAppleIcon>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 28,
-      height: 28,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Spinning arc ring
-          RotationTransition(
-            turns: _controller,
-            child: CustomPaint(
-              size: const Size(28, 28),
-              painter: _ArcRingPainter(color: widget.color),
-            ),
-          ),
-          // Centered Apple glyph
-          SvgPicture.asset(
-            'assets/icons/apple.svg',
-            width: 14,
-            height: 14,
-            colorFilter: ColorFilter.mode(widget.color, BlendMode.srcIn),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Paints a 270° arc with a sweeping alpha gradient — the remaining 90°
-/// gap is what creates the "loading spinner" look as the parent rotates.
-class _ArcRingPainter extends CustomPainter {
-  _ArcRingPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const stroke = 2.4;
-    final rect = Offset.zero & size;
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - stroke) / 2;
-
-    // Faint full track
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..color = color.withValues(alpha: 0.18)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke,
-    );
-
-    // Sweeping arc — 270° starting at the top
-    final arcRect = rect.deflate(stroke / 2);
-    final sweep = 270 * (math.pi / 180);
-    final path = Path()
-      ..addArc(arcRect, -math.pi / 2, sweep);
-
-    final gradient = SweepGradient(
-      startAngle: -math.pi / 2,
-      endAngle: -math.pi / 2 + sweep,
-      colors: [
-        color.withValues(alpha: 0.0),
-        color.withValues(alpha: 0.6),
-        color,
-      ],
-      stops: const [0.0, 0.6, 1.0],
-    );
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..shader = gradient.createShader(arcRect)
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = stroke,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_ArcRingPainter oldDelegate) =>
-      oldDelegate.color != color;
-}

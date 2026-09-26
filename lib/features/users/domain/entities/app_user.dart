@@ -1,3 +1,7 @@
+/// Sentinel used by [AppUser.copyWith] to distinguish "leave this nullable
+/// field unchanged" from "set it to `null`".
+const Object _unset = Object();
+
 /// Domain entity representing a registered user.
 ///
 /// This is the core business object, independent of any data source.
@@ -57,15 +61,20 @@ class AppUser {
       displayName!.isNotEmpty;
 
   /// Creates a copy of this entity with the given fields replaced.
+  ///
+  /// The nullable fields ([phoneNumber], [displayName], [profilePicture]) use
+  /// an "unset" sentinel so a caller can explicitly clear one by passing
+  /// `null` (e.g. `copyWith(profilePicture: null)` when the user removes their
+  /// photo), while omitting the argument leaves the current value untouched.
   AppUser copyWith({
     String? id,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? fullName,
     String? email,
-    String? phoneNumber,
-    String? displayName,
-    String? profilePicture,
+    Object? phoneNumber = _unset,
+    Object? displayName = _unset,
+    Object? profilePicture = _unset,
   }) {
     return AppUser(
       id: id ?? this.id,
@@ -73,9 +82,13 @@ class AppUser {
       updatedAt: updatedAt ?? this.updatedAt,
       fullName: fullName ?? this.fullName,
       email: email ?? this.email,
-      phoneNumber: phoneNumber ?? this.phoneNumber,
-      displayName: displayName ?? this.displayName,
-      profilePicture: profilePicture ?? this.profilePicture,
+      phoneNumber:
+          phoneNumber == _unset ? this.phoneNumber : phoneNumber as String?,
+      displayName:
+          displayName == _unset ? this.displayName : displayName as String?,
+      profilePicture: profilePicture == _unset
+          ? this.profilePicture
+          : profilePicture as String?,
     );
   }
 }
