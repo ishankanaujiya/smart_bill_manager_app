@@ -56,7 +56,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
   Future<void> _launchEmail() async {
     final uri = Uri(
       scheme: 'mailto',
-      path: 'taboracustomersuppoart@gmail.com',
+      path: 'ishankanaujiya96@gmail.com',
       query: 'subject=Support Request — Smart Bill Manager',
     );
 
@@ -76,7 +76,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
                 // into any mail client manually.
                 await Clipboard.setData(
                   const ClipboardData(
-                    text: 'taboracustomersuppoart@gmail.com',
+                    text: 'ishankanaujiya96@gmail.com',
                   ),
                 );
                 messenger.showSnackBar(
@@ -155,7 +155,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
                   child: _ContactCard(
                     icon: Icons.mail_outline_rounded,
                     label: 'Email Us',
-                    email: 'taboracustomersuppoart@gmail.com',
+                    email: 'ishankanaujiya96@gmail.com',
                     gradientStart: const Color(0xFF60A5FA),
                     gradientEnd: const Color(0xFF2563EB),
                     onTap: _launchEmail,
