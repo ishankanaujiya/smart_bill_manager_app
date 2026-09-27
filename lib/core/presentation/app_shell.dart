@@ -26,13 +26,32 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
   late final Animation<double> _barSlide;
   late final Animation<double> _barFade;
 
-  static const _navHeight = 78.0;
+  /// Drives the content entrance animation for whichever tab is selected.
+  ///
+  /// A single controller is shared by every tab screen so their staggered
+  /// content animations stay consistent, and it is restarted on each tab
+  /// change so a tab's content cascades in instead of snapping into place.
+  late final AnimationController _tabEntrance;
+
+  /// Fade applied to the whole tab body so components a screen does not wrap
+  /// in a [StaggeredEntrance] ease in rather than appearing instantly.
+  late final Animation<double> _tabFade;
+
+  /// Subtle upward drift applied to the whole tab body so a tab settles into
+  /// place instead of snapping in.
+  late final Animation<Offset> _tabSlide;
+
+  static const _navHeight = 65.0;
+
+  /// How long a tab's content takes to enter. Kept in one place so every tab
+  /// animates at the same speed.
+  static const _tabEntranceDuration = Duration(milliseconds: 600);
 
   late final List<Widget> _pages = [
-    HomeScreen(onNavigateToTab: _onTabSelected),
-    GroupsScreen(),
+    HomeScreen(onNavigateToTab: _onTabSelected, entrance: _tabEntrance),
+    GroupsScreen(entrance: _tabEntrance),
     const SizedBox.shrink(),
-    const ProfileScreen(),
+    ProfileScreen(entrance: _tabEntrance),
   ];
   @override
   void initState() {
@@ -41,6 +60,24 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
     _entranceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 760),
+    );
+
+    _tabEntrance = AnimationController(
+      vsync: this,
+      duration: _tabEntranceDuration,
+    );
+    _tabFade = CurvedAnimation(
+      parent: _tabEntrance,
+      curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
+    );
+    _tabSlide = Tween<Offset>(
+      begin: const Offset(0, 0.014),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _tabEntrance,
+        curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+      ),
     );
 
     _barSlide = Tween<double>(begin: 64, end: 0).animate(
@@ -56,11 +93,13 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
     );
 
     _entranceController.forward();
+    _tabEntrance.forward();
   }
 
   @override
   void dispose() {
     _entranceController.dispose();
+    _tabEntrance.dispose();
     super.dispose();
   }
 
@@ -71,6 +110,8 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
     }
     if (_currentIndex == index) return;
     setState(() => _currentIndex = index);
+    // Replay the entrance so the newly selected tab's content cascades in.
+    _tabEntrance.forward(from: 0);
   }
 
   void _openCreateGroup() {
@@ -86,9 +127,15 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
 
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
+      body: SlideTransition(
+        position: _tabSlide,
+        child: FadeTransition(
+          opacity: _tabFade,
+          child: IndexedStack(
+            index: _currentIndex,
+            children: _pages,
+          ),
+        ),
       ),
       bottomNavigationBar: _BottomNavBar(
         currentIndex: _currentIndex,
@@ -118,6 +165,28 @@ class _BottomNavBar extends StatelessWidget {
   final ColorScheme colorScheme;
   final Animation<double> slideAnimation;
   final Animation<double> fadeAnimation;
+
+  /// Number of tabs rendered in the bar.
+  static const _itemCount = 4;
+
+  /// How long the selection pill takes to slide between tabs.
+  static const _indicatorDuration = Duration(milliseconds: 320);
+
+  /// Size of the selection pill drawn behind the active icon.
+  static const _pillWidth = 58.0;
+  static const _pillHeight = 38.0;
+
+  /// Horizontal position of the selection pill for [currentIndex].
+  ///
+  /// Mirrors the `spaceEvenly` layout of the icon row: the equal-width items
+  /// share the bar's width with equal gaps, so their centres are evenly spaced
+  /// and symmetric about the middle.
+  double _indicatorLeft(double width) {
+    final gap = (width - _itemCount * _NavItem.extent) / (_itemCount + 1);
+    final spacing = _NavItem.extent + gap;
+    final centre = width / 2 + (currentIndex - (_itemCount - 1) / 2) * spacing;
+    return centre - _pillWidth / 2;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -164,47 +233,72 @@ class _BottomNavBar extends StatelessWidget {
                   ),
                   boxShadow: isDark ? AppShadows.smDark : AppShadows.smLight,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    _NavItem(
-                      index: 0,
-                      currentIndex: currentIndex,
-                      icon: Icons.home_outlined,
-                      activeIcon: Icons.home_filled,
-                      onTap: () => onTap(0),
-                      colorScheme: colorScheme,
-                      isDark: isDark,
-                    ),
-                    _NavItem(
-                      index: 1,
-                      currentIndex: currentIndex,
-                      icon: Icons.people_alt_outlined,
-                      activeIcon: Icons.people_alt_rounded,
-                      onTap: () => onTap(1),
-                      colorScheme: colorScheme,
-                      isDark: isDark,
-                    ),
-                    _NavItem(
-                      index: 2,
-                      currentIndex: currentIndex,
-                      icon: Icons.add_to_photos_rounded,
-                      activeIcon: Icons.group_add_rounded,
-                      onTap: () => onTap(2),
-                      colorScheme: colorScheme,
-                      isDark: isDark,
-                    ),
-                    _NavItem(
-                      index: 3,
-                      currentIndex: currentIndex,
-                      icon: Icons.person_outline,
-                      activeIcon: Icons.person_rounded,
-                      onTap: () => onTap(3),
-                      colorScheme: colorScheme,
-                      isDark: isDark,
-                    ),
-                  ],
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Sliding selection pill — animates between tabs
+                        // instead of appearing in place.
+                        AnimatedPositioned(
+                          duration: _indicatorDuration,
+                          curve: Curves.easeOutCubic,
+                          left: _indicatorLeft(constraints.maxWidth),
+                          top: (constraints.maxHeight - _pillHeight) / 2,
+                          width: _pillWidth,
+                          height: _pillHeight,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? colorScheme.onSurface
+                                      .withValues(alpha: 0.18)
+                                  : colorScheme.onSurface
+                                      .withValues(alpha: 0.10),
+                              borderRadius: AppRadius.radiusFull,
+                            ),
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            _NavItem(
+                              index: 0,
+                              currentIndex: currentIndex,
+                              icon: Icons.home_outlined,
+                              activeIcon: Icons.home_filled,
+                              onTap: () => onTap(0),
+                              colorScheme: colorScheme,
+                            ),
+                            _NavItem(
+                              index: 1,
+                              currentIndex: currentIndex,
+                              icon: Icons.people_alt_outlined,
+                              activeIcon: Icons.people_alt_rounded,
+                              onTap: () => onTap(1),
+                              colorScheme: colorScheme,
+                            ),
+                            _NavItem(
+                              index: 2,
+                              currentIndex: currentIndex,
+                              icon: Icons.add_to_photos_rounded,
+                              activeIcon: Icons.group_add_rounded,
+                              onTap: () => onTap(2),
+                              colorScheme: colorScheme,
+                            ),
+                            _NavItem(
+                              index: 3,
+                              currentIndex: currentIndex,
+                              icon: Icons.person_outline,
+                              activeIcon: Icons.person_rounded,
+                              onTap: () => onTap(3),
+                              colorScheme: colorScheme,
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -223,7 +317,6 @@ class _NavItem extends StatelessWidget {
     required this.activeIcon,
     required this.onTap,
     required this.colorScheme,
-    required this.isDark,
   });
 
   final int index;
@@ -232,7 +325,9 @@ class _NavItem extends StatelessWidget {
   final IconData activeIcon;
   final VoidCallback onTap;
   final ColorScheme colorScheme;
-  final bool isDark;
+
+  /// Width and height of a single nav item's tap target.
+  static const double extent = 56;
 
   bool get isSelected => index == currentIndex;
 
@@ -245,33 +340,17 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 56,
-        height: 56,
+        width: extent,
+        height: extent,
         child: AnimatedScale(
           scale: isSelected ? 1.0 : 0.92,
           duration: const Duration(milliseconds: 260),
           curve: Curves.easeOutBack,
           child: Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
-              decoration: isSelected
-                  ? BoxDecoration(
-                      color: isDark
-                          ? colorScheme.onSurface.withValues(alpha: 0.18)
-                          : colorScheme.onSurface.withValues(alpha: 0.10),
-                      borderRadius: AppRadius.radiusFull,
-                    )
-                  : null,
-              child: Icon(
-                isSelected ? activeIcon : icon,
-                color: iconColor,
-                size: 26,
-              ),
+            child: Icon(
+              isSelected ? activeIcon : icon,
+              color: iconColor,
+              size: 26,
             ),
           ),
         ),

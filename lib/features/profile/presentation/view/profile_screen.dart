@@ -13,7 +13,14 @@ import 'payment_methods_screen.dart';
 
 /// Profile tab — hero header card, user info, and settings rows.
 class ProfileScreen extends ConsumerStatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.entrance});
+
+  /// Optional entrance animation owned by the app shell.
+  ///
+  /// When provided, the shell drives the staggered content entrance and
+  /// restarts it on every tab selection. When `null` the screen falls back to
+  /// its own controller so it still animates when shown on its own.
+  final Animation<double>? entrance;
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -22,6 +29,10 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with TickerProviderStateMixin {
   late final AnimationController _entranceController;
+
+  /// The entrance animation actually used by the staggered content. Prefers
+  /// the shell-owned animation so tab switches replay the entrance.
+  Animation<double> get _entrance => widget.entrance ?? _entranceController;
 
   @override
   void initState() {
@@ -34,6 +45,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Future<void> _startEntrance() async {
+    // When the shell owns the entrance animation it restarts it on each tab
+    // selection, so the screen must not also drive its own controller.
+    if (widget.entrance != null) return;
     await Future.delayed(const Duration(milliseconds: 80));
     if (!mounted) return;
     _entranceController.forward();
@@ -94,8 +108,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Page header label ───────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.0, 0.45, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
               child: Padding(
                 padding: const EdgeInsets.only(
                   left: AppSpacing.screenHorizontal,
@@ -116,8 +130,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Hero header card ────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.05, 0.5, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.05, 0.5, curve: Curves.easeOutCubic),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenHorizontal,
@@ -144,15 +158,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Account section ─────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.15, 0.6, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.15, 0.6, curve: Curves.easeOutCubic),
               child: _SectionLabel(label: 'Account'),
             ),
           ),
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.18, 0.63, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.18, 0.63, curve: Curves.easeOutCubic),
               child: _SettingsGroup(
                 isDark: isDark,
                 colorScheme: colorScheme,
@@ -185,15 +199,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Preferences section ─────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.25, 0.7, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.25, 0.7, curve: Curves.easeOutCubic),
               child: _SectionLabel(label: 'Preferences'),
             ),
           ),
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.28, 0.73, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.28, 0.73, curve: Curves.easeOutCubic),
               child: _SettingsGroup(
                 isDark: isDark,
                 colorScheme: colorScheme,
@@ -217,15 +231,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Support section ─────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.35, 0.8, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.35, 0.8, curve: Curves.easeOutCubic),
               child: _SectionLabel(label: 'Support'),
             ),
           ),
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.38, 0.83, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.38, 0.83, curve: Curves.easeOutCubic),
               child: _SettingsGroup(
                 isDark: isDark,
                 colorScheme: colorScheme,
@@ -249,8 +263,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Sign out ────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.45, 0.9, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.45, 0.9, curve: Curves.easeOutCubic),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenHorizontal,
