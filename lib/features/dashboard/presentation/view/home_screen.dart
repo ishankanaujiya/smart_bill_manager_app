@@ -24,10 +24,17 @@ const String _hiddenAmount = '${AppConstants.currencySymbol} xxxx.xx';
 /// and a list of the user's groups. All data is sourced from real-time
 /// Riverpod providers — no mocked values.
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key, this.onNavigateToTab});
+  const HomeScreen({super.key, this.onNavigateToTab, this.entrance});
 
   /// Callback to switch the bottom nav tab (e.g. to the Groups tab).
   final void Function(int index)? onNavigateToTab;
+
+  /// Optional entrance animation owned by the app shell.
+  ///
+  /// When provided, the shell drives the staggered content entrance and
+  /// restarts it on every tab selection. When `null` the screen falls back to
+  /// its own controller so it still animates when shown on its own.
+  final Animation<double>? entrance;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -48,10 +55,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// Lazily creates the entrance controller on first access so that hot
   /// reload (which doesn't re-run initState) doesn't crash with a
   /// LateInitializationError.
-  AnimationController get _entrance => _entranceCtrl ??= AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 900),
-      )..forward();
+  Animation<double> get _entrance {
+    if (widget.entrance != null) return widget.entrance!;
+    return _entranceCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..forward();
+  }
 
   /// Lazily creates the ambient controller on first access.
   AnimationController get _ambient => _ambientCtrl ??= AnimationController(
@@ -79,7 +89,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     Widget child, {
     required double start,
     required double end,
-    double slide = 24,
+    double slide = 14,
     Curve curve = Curves.easeOutCubic,
   }) {
     return StaggeredEntrance(
@@ -1061,7 +1071,7 @@ class _GroupListTile extends ConsumerStatefulWidget {
   final Group group;
   final ColorScheme colorScheme;
   final bool isDark;
-  final AnimationController entranceController;
+  final Animation<double> entranceController;
   final int index;
 
   @override

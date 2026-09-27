@@ -25,8 +25,9 @@ abstract class UserRepository {
 
   /// Updates an existing user document with the fields in [user].
   ///
-  /// Only non-null fields are written. The `updated_at` timestamp is
-  /// always refreshed.
+  /// The `updated_at` timestamp is always refreshed. Optional fields
+  /// (`phone_number`, `display_name`, `profile_picture`) are deleted from the
+  /// document when they are `null`, so clearing a value is persisted.
   Future<void> updateUser(AppUser user);
 
   /// Deletes the user document for the given [uid].

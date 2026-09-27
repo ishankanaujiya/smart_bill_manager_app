@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/design_system.dart';
 import '../../../../core/widgets/animated_entrance.dart';
+import '../../../../core/widgets/photo_preview.dart';
 import '../../../auth/presentation/state/auth_providers.dart';
 import '../../../auth/presentation/view/welcome_screen.dart';
 import 'appearance_screen.dart';
@@ -12,7 +13,14 @@ import 'payment_methods_screen.dart';
 
 /// Profile tab — hero header card, user info, and settings rows.
 class ProfileScreen extends ConsumerStatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.entrance});
+
+  /// Optional entrance animation owned by the app shell.
+  ///
+  /// When provided, the shell drives the staggered content entrance and
+  /// restarts it on every tab selection. When `null` the screen falls back to
+  /// its own controller so it still animates when shown on its own.
+  final Animation<double>? entrance;
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -21,6 +29,10 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with TickerProviderStateMixin {
   late final AnimationController _entranceController;
+
+  /// The entrance animation actually used by the staggered content. Prefers
+  /// the shell-owned animation so tab switches replay the entrance.
+  Animation<double> get _entrance => widget.entrance ?? _entranceController;
 
   @override
   void initState() {
@@ -33,6 +45,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Future<void> _startEntrance() async {
+    // When the shell owns the entrance animation it restarts it on each tab
+    // selection, so the screen must not also drive its own controller.
+    if (widget.entrance != null) return;
     await Future.delayed(const Duration(milliseconds: 80));
     if (!mounted) return;
     _entranceController.forward();
@@ -93,8 +108,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Page header label ───────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.0, 0.45, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
               child: Padding(
                 padding: const EdgeInsets.only(
                   left: AppSpacing.screenHorizontal,
@@ -115,8 +130,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Hero header card ────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.05, 0.5, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.05, 0.5, curve: Curves.easeOutCubic),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenHorizontal,
@@ -143,15 +158,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Account section ─────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.15, 0.6, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.15, 0.6, curve: Curves.easeOutCubic),
               child: _SectionLabel(label: 'Account'),
             ),
           ),
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.18, 0.63, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.18, 0.63, curve: Curves.easeOutCubic),
               child: _SettingsGroup(
                 isDark: isDark,
                 colorScheme: colorScheme,
@@ -184,15 +199,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Preferences section ─────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.25, 0.7, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.25, 0.7, curve: Curves.easeOutCubic),
               child: _SectionLabel(label: 'Preferences'),
             ),
           ),
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.28, 0.73, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.28, 0.73, curve: Curves.easeOutCubic),
               child: _SettingsGroup(
                 isDark: isDark,
                 colorScheme: colorScheme,
@@ -216,15 +231,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Support section ─────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.35, 0.8, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.35, 0.8, curve: Curves.easeOutCubic),
               child: _SectionLabel(label: 'Support'),
             ),
           ),
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.38, 0.83, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.38, 0.83, curve: Curves.easeOutCubic),
               child: _SettingsGroup(
                 isDark: isDark,
                 colorScheme: colorScheme,
@@ -248,8 +263,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Sign out ────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
-              interval: const Interval(0.45, 0.9, curve: Curves.easeOut),
+              animation: _entrance,
+              interval: const Interval(0.45, 0.9, curve: Curves.easeOutCubic),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenHorizontal,
@@ -287,6 +302,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 // Hero header card
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// [Hero] tag shared by the header avatar and the full-screen photo preview so
+/// the image flies between the two when the avatar is tapped.
+const _profileAvatarHeroTag = 'profile-avatar-hero';
+
 class _ProfileHeaderCard extends StatelessWidget {
   const _ProfileHeaderCard({
     required this.fullName,
@@ -314,6 +333,20 @@ class _ProfileHeaderCard extends StatelessWidget {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
+  bool get _hasPhoto =>
+      profilePictureUrl != null && profilePictureUrl!.isNotEmpty;
+
+  /// Tapping the avatar opens the photo preview. When the user has no photo,
+  /// the preview shows their initials instead.
+  void _onAvatarTap(BuildContext context) {
+    showPhotoPreview(
+      context,
+      imageUrl: profilePictureUrl,
+      initials: _initials,
+      heroTag: _hasPhoto ? _profileAvatarHeroTag : null,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final gradient = isDark
@@ -338,6 +371,8 @@ class _ProfileHeaderCard extends StatelessWidget {
                 initials: _initials,
                 profilePictureUrl: profilePictureUrl,
                 isDark: isDark,
+                heroTag: _profileAvatarHeroTag,
+                onTap: () => _onAvatarTap(context),
               ),
               const SizedBox(width: AppSpacing.lg),
               Expanded(
@@ -418,22 +453,55 @@ class _ProfileHeaderCard extends StatelessWidget {
 // Avatar
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _Avatar extends StatelessWidget {
+class _Avatar extends StatefulWidget {
   const _Avatar({
     required this.initials,
     required this.isDark,
     this.profilePictureUrl,
+    this.heroTag,
+    this.onTap,
   });
 
   final String initials;
   final String? profilePictureUrl;
   final bool isDark;
+  final Object? heroTag;
+  final VoidCallback? onTap;
+
+  @override
+  State<_Avatar> createState() => _AvatarState();
+}
+
+class _AvatarState extends State<_Avatar> {
+  bool _pressed = false;
+
+  bool get _hasPhoto =>
+      widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty;
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
 
   @override
   Widget build(BuildContext context) {
     const size = 72.0;
 
-    return Container(
+    Widget content = _hasPhoto
+        ? Image.network(
+            widget.profilePictureUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                _InitialsLabel(initials: widget.initials),
+          )
+        : _InitialsLabel(initials: widget.initials);
+
+    // Only the photo participates in the Hero flight, so the thumbnail's
+    // circular clip is handed to the preview's shuttle during the transition.
+    if (_hasPhoto && widget.heroTag != null) {
+      content = Hero(tag: widget.heroTag!, child: content);
+    }
+
+    final avatar = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -452,13 +520,27 @@ class _Avatar extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: profilePictureUrl != null && profilePictureUrl!.isNotEmpty
-          ? Image.network(
-              profilePictureUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _InitialsLabel(initials: initials),
-            )
-          : _InitialsLabel(initials: initials),
+      child: content,
+    );
+
+    if (widget.onTap == null) return avatar;
+
+    return Semantics(
+      button: true,
+      label: _hasPhoto ? 'View profile photo' : 'View profile',
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedScale(
+          scale: _pressed ? 0.93 : 1.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          child: avatar,
+        ),
+      ),
     );
   }
 }

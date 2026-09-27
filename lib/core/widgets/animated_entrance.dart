@@ -12,7 +12,7 @@ class StaggeredEntrance extends StatelessWidget {
     required this.animation,
     required this.interval,
     required this.child,
-    this.slideOffset = 24,
+    this.slideOffset = 14,
   });
 
   /// The parent animation controller (0.0 → 1.0).

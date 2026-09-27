@@ -34,7 +34,14 @@ enum _CardPattern { dots, peaks, route, squareGrid, dotMatrix, circles }
 /// grid with animated decorative patterns, and a "Create a new group" promo
 /// card at the bottom.
 class GroupsScreen extends ConsumerStatefulWidget {
-  const GroupsScreen({super.key});
+  const GroupsScreen({super.key, this.entrance});
+
+  /// Optional entrance animation owned by the app shell.
+  ///
+  /// When provided, the shell drives the staggered content entrance and
+  /// restarts it on every tab selection. When `null` the screen falls back to
+  /// its own controller so it still animates when shown on its own.
+  final Animation<double>? entrance;
 
   @override
   ConsumerState<GroupsScreen> createState() => _GroupsScreenState();
@@ -45,6 +52,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   late final AnimationController _entranceController;
   late final AnimationController _ambientController;
   late final AnimationController _patternController;
+
+  /// The entrance animation actually used by the staggered content. Prefers
+  /// the shell-owned animation so tab switches replay the entrance.
+  Animation<double> get _entrance => widget.entrance ?? _entranceController;
 
   _GroupSort _activeSort = _GroupSort.recent;
 
@@ -76,6 +87,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   }
 
   Future<void> _startEntrance() async {
+    // When the shell owns the entrance animation it restarts it on each tab
+    // selection, so the screen must not also drive its own controller.
+    if (widget.entrance != null) return;
     await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
     _entranceController.forward();
@@ -150,9 +164,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           // ── App bar ──────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
+              animation: _entrance,
               interval: const Interval(0.0, 0.35, curve: Curves.easeOutCubic),
-              slideOffset: 20,
+              slideOffset: 14,
               child: _AppBar(
                 colorScheme: colorScheme,
                 isDark: isDark,
@@ -169,9 +183,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           // ── Stats row ────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
+              animation: _entrance,
               interval: const Interval(0.1, 0.45, curve: Curves.easeOutCubic),
-              slideOffset: 24,
+              slideOffset: 14,
               child: groupsAsync.when(
                 data: (groups) {
                   final balanceAsync = ref.watch(userBalanceProvider);
@@ -206,9 +220,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           // ── Sort bar ────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: StaggeredEntrance(
-              animation: _entranceController,
+              animation: _entrance,
               interval: const Interval(0.2, 0.5, curve: Curves.easeOutCubic),
-              slideOffset: 20,
+              slideOffset: 14,
               child: _FilterBar(
                 activeSort: _activeSort,
                 colorScheme: colorScheme,
@@ -225,7 +239,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                 return SliverFillRemaining(
                   hasScrollBody: false,
                   child: _EmptyState(
-                    entranceController: _entranceController,
+                    entranceController: _entrance,
                     ambientController: _ambientController,
                     colorScheme: colorScheme,
                     onCreateGroup: _openCreateGroup,
@@ -247,7 +261,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
             error: (error, _) => SliverFillRemaining(
               hasScrollBody: false,
               child: _ErrorState(
-                entranceController: _entranceController,
+                entranceController: _entrance,
                 colorScheme: colorScheme,
                 onRetry: () => ref.invalidate(groupsForCurrentUserProvider),
               ),
@@ -258,10 +272,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           SliverToBoxAdapter(
             child: groupsAsync.maybeWhen(
               data: (_) => StaggeredEntrance(
-                animation: _entranceController,
+                animation: _entrance,
                 interval:
                     const Interval(0.55, 0.85, curve: Curves.easeOutCubic),
-                slideOffset: 20,
+                slideOffset: 14,
                 child: _PromoCard(
                   colorScheme: colorScheme,
                   isDark: isDark,
@@ -303,13 +317,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
             final color = _groupColor(index);
             final pattern = _CardPattern.values[index % _CardPattern.values.length];
             return StaggeredEntrance(
-              animation: _entranceController,
+              animation: _entrance,
               interval: Interval(
                 0.28 + (index * 0.04).clamp(0.0, 0.4),
                 0.60 + (index * 0.04).clamp(0.0, 0.4),
                 curve: Curves.easeOutCubic,
               ),
-              slideOffset: 28,
+              slideOffset: 14,
               child: _GroupCard(
                 group: group,
                 color: color,
@@ -2007,7 +2021,7 @@ class _EmptyState extends StatelessWidget {
     required this.onCreateGroup,
   });
 
-  final AnimationController entranceController;
+  final Animation<double> entranceController;
   final AnimationController ambientController;
   final ColorScheme colorScheme;
   final VoidCallback onCreateGroup;
@@ -2022,7 +2036,7 @@ class _EmptyState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.1, 0.5, curve: Curves.easeOutBack),
-            slideOffset: 30,
+            slideOffset: 14,
             child: _FloatingIconCluster(
               ambientController: ambientController,
               colorScheme: colorScheme,
@@ -2032,7 +2046,7 @@ class _EmptyState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.25, 0.6, curve: Curves.easeOutCubic),
-            slideOffset: 20,
+            slideOffset: 14,
             child: Text(
               'No groups yet',
               style: AppTextStyles.headlineSmall.copyWith(
@@ -2045,7 +2059,7 @@ class _EmptyState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.32, 0.65, curve: Curves.easeOutCubic),
-            slideOffset: 20,
+            slideOffset: 14,
             child: Text(
               'Create your first group to start splitting\nbills with friends and flatmates.',
               textAlign: TextAlign.center,
@@ -2059,7 +2073,7 @@ class _EmptyState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.42, 0.72, curve: Curves.easeOutBack),
-            slideOffset: 20,
+            slideOffset: 14,
             child: FilledButton.icon(
               onPressed: onCreateGroup,
               icon: const Icon(Icons.add_rounded, size: 20),
@@ -2261,7 +2275,7 @@ class _ErrorState extends StatelessWidget {
     required this.onRetry,
   });
 
-  final AnimationController entranceController;
+  final Animation<double> entranceController;
   final ColorScheme colorScheme;
   final VoidCallback onRetry;
 
@@ -2275,7 +2289,7 @@ class _ErrorState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.1, 0.5, curve: Curves.easeOutBack),
-            slideOffset: 30,
+            slideOffset: 14,
             child: Container(
               width: 96,
               height: 96,
@@ -2298,7 +2312,7 @@ class _ErrorState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.25, 0.6, curve: Curves.easeOutCubic),
-            slideOffset: 20,
+            slideOffset: 14,
             child: Text(
               "Couldn't load groups",
               style: AppTextStyles.headlineSmall.copyWith(
@@ -2311,7 +2325,7 @@ class _ErrorState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.32, 0.65, curve: Curves.easeOutCubic),
-            slideOffset: 20,
+            slideOffset: 14,
             child: Text(
               'Please check your connection and try again.',
               textAlign: TextAlign.center,
@@ -2324,7 +2338,7 @@ class _ErrorState extends StatelessWidget {
           StaggeredEntrance(
             animation: entranceController,
             interval: const Interval(0.42, 0.72, curve: Curves.easeOutBack),
-            slideOffset: 20,
+            slideOffset: 14,
             child: FilledButton.tonalIcon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded, size: 20),
