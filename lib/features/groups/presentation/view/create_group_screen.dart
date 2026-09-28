@@ -108,7 +108,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
           _Member(
             id: firebaseUser.uid,
             name: firebaseUser.displayName ?? 'You',
-            phone: '—',
+            phone: null,
             email: firebaseUser.email ?? '',
             avatarUrl: firebaseUser.photoURL,
             isCurrentUser: true,
@@ -288,7 +288,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
       id: member.id,
       fullName: member.name,
       email: member.email,
-      phoneNumber: member.phone == '—' ? null : member.phone,
+      phoneNumber: member.phone,
       displayName: member.name,
       profilePicture: member.avatarUrl,
       role: isAdmin ? MemberRole.admin : member.role.toMemberRole,
@@ -1592,12 +1592,17 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen>
                         if (!member.isCurrentUser) const SizedBox(width: 28),
                       ],
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                    _buildContactRow(
-                      icon: Icons.phone,
-                      text: member.phone,
-                      colorScheme: colorScheme,
-                    ),
+                    // Only show the phone row when the member actually has a
+                    // number — Google sign-in users may have none, and
+                    // rendering the icon alone looks broken.
+                    if (member.phone != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      _buildContactRow(
+                        icon: Icons.phone,
+                        text: member.phone!,
+                        colorScheme: colorScheme,
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.xs),
                     _buildContactRow(
                       icon: Icons.email,
@@ -1843,8 +1848,8 @@ class _Member {
   const _Member({
     required this.id,
     required this.name,
-    required this.phone,
     required this.email,
+    this.phone,
     this.avatarUrl,
     this.isCurrentUser = false,
     this.role = _MemberRole.member,
@@ -1859,7 +1864,10 @@ class _Member {
     final name = user.displayName?.isNotEmpty == true
         ? user.displayName!
         : user.fullName;
-    final phone = user.phoneNumber ?? '—';
+    // Normalise absent/empty phone numbers to null so the card can hide the
+    // phone row entirely instead of showing a bare icon or a placeholder.
+    final rawPhone = user.phoneNumber;
+    final phone = rawPhone == null || rawPhone.isEmpty ? null : rawPhone;
     return _Member(
       id: user.id,
       name: name,
@@ -1874,7 +1882,7 @@ class _Member {
   /// Firestore document ID — used to prevent duplicate members.
   final String id;
   final String name;
-  final String phone;
+  final String? phone;
   final String email;
   final String? avatarUrl;
   final bool isCurrentUser;

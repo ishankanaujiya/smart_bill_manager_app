@@ -258,6 +258,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen>
                 const SizedBox(height: AppSpacing.xl),
                 AuthPrimaryButton(
                   label: 'Send reset link',
+                  loadingLabel: 'Sending…',
                   onPressed: _submit,
                   isLoading: isSending,
                 ),

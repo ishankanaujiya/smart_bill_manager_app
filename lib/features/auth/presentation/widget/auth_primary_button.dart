@@ -10,14 +10,15 @@ import '../../../../app/theme/design_system.dart';
 /// sine-bell curve, creating a "blinking blur" effect that draws attention
 /// to the CTA without altering the button's own background colour.
 ///
-/// While [isLoading] is `true` the button is disabled and shows a spinner,
-/// which also guards against double submissions.
+/// While [isLoading] is `true` the button is disabled and shows a spinner
+/// alongside [loadingLabel], which also guards against double submissions.
 class AuthPrimaryButton extends StatefulWidget {
   const AuthPrimaryButton({
     super.key,
     required this.label,
     required this.onPressed,
     this.isLoading = false,
+    this.loadingLabel,
   });
 
   /// Text shown inside the button when not loading.
@@ -26,7 +27,13 @@ class AuthPrimaryButton extends StatefulWidget {
   /// Called when the user taps the button.
   final VoidCallback onPressed;
 
-  /// When `true`, disables the button and shows a spinner.
+  /// Text shown next to the spinner while [isLoading] is `true`.
+  ///
+  /// Defaults to [label] when omitted, but callers should pass a progressive
+  /// label (e.g. `'Signing in…'`) so the busy state reads clearly.
+  final String? loadingLabel;
+
+  /// When `true`, disables the button and shows a spinner + [loadingLabel].
   final bool isLoading;
 
   @override
@@ -102,13 +109,20 @@ class _AuthPrimaryButtonState extends State<AuthPrimaryButton>
             ),
           ),
           child: widget.isLoading
-              ? SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: colorScheme.onPrimary,
-                  ),
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colorScheme.onPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(widget.loadingLabel ?? widget.label),
+                  ],
                 )
               : Text(widget.label),
         ),

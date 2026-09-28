@@ -356,6 +356,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                               // Sign in CTA
                               AuthPrimaryButton(
                                 label: 'Sign in',
+                                loadingLabel: 'Signing in…',
                                 onPressed: _onSignIn,
                                 isLoading: ref.watch(authActionProvider)
                                     is AuthActionLoading,

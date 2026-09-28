@@ -159,12 +159,14 @@ class _RegistrationDoneScreenState extends State<RegistrationDoneScreen>
 
                               const SizedBox(height: AppSpacing.xxxl),
 
-                              // Verified phone card
-                              _VerifiedPhoneCard(
-                                phoneNumber: widget.phoneNumber,
-                              ),
-
-                              const SizedBox(height: AppSpacing.xxxl),
+                              // Verified phone card — hidden when the user
+                              // has no phone number (e.g. Google sign-in).
+                              if (widget.phoneNumber.isNotEmpty) ...[
+                                _VerifiedPhoneCard(
+                                  phoneNumber: widget.phoneNumber,
+                                ),
+                                const SizedBox(height: AppSpacing.xxxl),
+                              ],
 
                               // Sign in button
                               _PrimaryActionButton(
