@@ -60,7 +60,7 @@ Smart Bill Manager makes shared-expense management simple for friends, families,
 
 - **Production-grade Foundations**
   - Centralized design system, theme, validators, formatters, and error handling
-  - Crash & performance monitoring via Sentry + Firebase Crashlytics
+  - Crash & performance monitoring via Sentry
   - Offline-friendly local database (Drift/SQLite) alongside Firestore
 
 ---
@@ -76,7 +76,7 @@ Smart Bill Manager makes shared-expense management simple for friends, families,
 | Navigation         | go_router                                                          |
 | Serialization      | `json_annotation` / `json_serializable`                           |
 | Security           | `flutter_secure_storage`                                          |
-| Monitoring         | Sentry Flutter, Firebase Crashlytics                              |
+| Monitoring         | Sentry Flutter                                                    |
 | Charts             | fl_chart                                                          |
 | Media              | image_picker, Cloudinary (via `http`)                             |
 | Auth providers     | Google Sign-In, country_picker                                    |
@@ -164,7 +164,7 @@ This guarantees that one group's financial data is never exposed to non-members,
    flutterfire configure
    ```
 
-   Ensure Auth, Firestore, Storage, Cloud Functions, FCM, App Check, and Crashlytics are enabled in the Firebase console, then deploy the rules:
+   Ensure Auth, Firestore, Storage, Cloud Functions, FCM, and App Check are enabled in the Firebase console, then deploy the rules:
 
    ```bash
    firebase deploy --only firestore:rules,storage

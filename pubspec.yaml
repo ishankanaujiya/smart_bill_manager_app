@@ -1,7 +1,7 @@
 name: smart_bill_manager
 description: "Group Expense Management and Bill-Splitting Application"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+4
 
 environment:
   sdk: ^3.6.0
@@ -18,7 +18,6 @@ dependencies:
   firebase_storage: ^13.4.6
   firebase_app_check: ^0.4.6
   cloud_functions: ^6.3.6
-  firebase_crashlytics: ^5.2.7
 
   # State Management & DI
   flutter_riverpod: ^2.6.1

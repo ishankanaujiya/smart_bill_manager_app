@@ -25,6 +25,37 @@ fixed-duration `tester.pump(...)` calls instead of `pumpAndSettle`.
 `dart format` on them, as it produces large unrelated diffs. Match the
 surrounding style manually.
 
+## Google Sign-In (Android)
+
+Android sign-in goes through the Credential Manager SDK
+(`google_sign_in` 7.x → `google_sign_in_android`). The app does **not** pass a
+`serverClientId` to `GoogleSignIn.instance.initialize()`; the plugin falls back
+to the `default_web_client_id` string generated from the `client_type: 3`
+(web) entry in `android/app/google-services.json`, so that file must keep a web
+OAuth client entry.
+
+Each **build configuration's signing certificate SHA-1** must be registered as
+an Android OAuth client in the Firebase project (Console → Project settings →
+Your apps → Android → *Add fingerprint*, or
+`firebase apps:android:sha:create <appId> <sha1>`). This repo has two:
+
+| Build    | Keystore                              | SHA-1 |
+|----------|---------------------------------------|-------|
+| debug    | `~/.android/debug.keystore`           | registered |
+| release  | `android/app/upload-keystore.jks`     | **must be registered too** |
+
+Release builds are signed with the upload keystore
+(`android/app/build.gradle.kts` → `signingConfigs.release`), so its SHA-1 and
+SHA-256 must both be registered or release builds fail sign-in.
+
+**Symptom of a missing/incorrect SHA:** after the user picks a Google account,
+`authenticate()` throws `GoogleSignInException(code: canceled)` — the Android
+Credential Manager reports the config error as a cancellation, and the plugin
+cannot tell the two apart. `AuthRepositoryImpl.signInWithGoogle` now logs the
+raw code/description via `debugPrint` so these are diagnosable; check logcat for
+`[AuthRepositoryImpl] Google sign-in failed:` before assuming the user really
+cancelled.
+
 ## Push notifications
 
 Notifications go through a Vercel serverless proxy:

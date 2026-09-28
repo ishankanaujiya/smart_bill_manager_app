@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../domain/repositories/auth_repository.dart';
@@ -78,6 +79,16 @@ class AuthRepositoryImpl implements AuthRepository {
       final userCredential = await _auth.signInWithCredential(credential);
       return AuthResult.success(userCredential.user!);
     } on GoogleSignInException catch (e) {
+      // The Android Credential Manager reports some configuration errors
+      // (e.g. a signing certificate SHA that isn't registered for this build)
+      // as `canceled`, which is indistinguishable from a real user
+      // cancellation at the plugin level. Log the raw code/description so
+      // these cases stay diagnosable instead of being silently swallowed.
+      debugPrint(
+        '[AuthRepositoryImpl] Google sign-in failed: '
+        'code=${e.code.name}, description=${e.description}',
+      );
+
       // User cancelled or the flow was interrupted.
       if (e.code == GoogleSignInExceptionCode.canceled ||
           e.code == GoogleSignInExceptionCode.interrupted) {

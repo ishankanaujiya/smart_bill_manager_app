@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "489568535248-04gc5t4e1r2dokuohr6c2rnqnlu3jpk2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nepasolvetech.smartbillmanager",
+            "certificate_hash": "ab26557b75dcf17d101dea35d205666905706e09"
+          }
+        },
+        {
+          "client_id": "489568535248-8enbp8vmns1feu5fi9ptltj4vujauvmu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nepasolvetech.smartbillmanager",
+            "certificate_hash": "d48d8d02451436ab1708f9259ca3363c5ad151fd"
+          }
+        },
+        {
           "client_id": "489568535248-4h9urns72o1aq50lc4itvdikh19m4i8t.apps.googleusercontent.com",
           "client_type": 3
         }
